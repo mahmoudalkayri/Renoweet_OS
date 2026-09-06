@@ -555,6 +555,17 @@ async function connectWorkbook(){
   await loadWorkbook(h,true);
  }catch(e){if(e.name!=='AbortError')alert(e.message)}
 }
+async function waitForStableFile(h,{samples=3,interval=900,maxWait=12000}={}){
+ const started=Date.now();let last=null,stable=0,current=null;
+ while(Date.now()-started<maxWait){
+  current=await h.getFile();
+  const sig=`${current.size}|${current.lastModified}`;
+  if(sig===last)stable++;else{last=sig;stable=1}
+  if(stable>=samples)return current;
+  await new Promise(r=>setTimeout(r,interval));
+ }
+ const e=new Error('OneDrive is still syncing this XLSX.');e.name='OneDriveBusyError';throw e;
+}
 async function loadWorkbook(h,ask){
  if(!(await verifyPermission(h,ask)))return false;
  let f=await h.getFile();
@@ -573,17 +584,22 @@ async function loadWorkbook(h,ask){
   let lastResult=null,lastError=null;
   dbState(true,'Merging device + XLSX…',f.name+(remembered?' • file remembered':' • connected for this session'));
 
-  for(let attempt=1;attempt<=3;attempt++){
+  for(let attempt=1;attempt<=4;attempt++){
    try{
-    if(attempt>1)await new Promise(r=>setTimeout(r,500*attempt));
-    const freshFile=await h.getFile();
+    if(attempt>1)await new Promise(r=>setTimeout(r,900*attempt));
+    dbState(true,'Waiting for OneDrive…',`Checking that the selected XLSX is stable before merge (${attempt}/4)`);
+    const freshFile=await waitForStableFile(h,{samples:3,interval:800,maxWait:9000});
     const freshWorkbook=XLSX.read(await freshFile.arrayBuffer(),{type:'array',cellDates:false});
     const remoteDb=databaseFromWorkbook(freshWorkbook);
     lastResult=mergeDatabases(lastSyncedDb,localSnapshot,remoteDb);
     db=lastResult.merged;workbook=freshWorkbook;resetProjectShadows();
     replaceDatabaseSheets();
     const bytes=XLSX.write(workbook,{bookType:'xlsx',type:'array'});
-    const w=await h.createWritable();
+    const beforeWrite=await waitForStableFile(h,{samples:2,interval:500,maxWait:5000});
+    if(beforeWrite.size!==freshFile.size||beforeWrite.lastModified!==freshFile.lastModified){
+      const e=new Error('OneDrive changed the XLSX after it was read.');e.name='OneDriveBusyError';throw e;
+    }
+    const w=await h.createWritable({keepExistingData:false});
     await w.write(bytes);
     await w.close();
 
@@ -595,16 +611,17 @@ async function loadWorkbook(h,ask){
     return true;
    }catch(e){
     lastError=e;console.warn('Reconnect merge attempt '+attempt+' failed',e);
-    if(!isStaleFileError(e))break;
-    dbState(false,'OneDrive changed during merge',`Refreshing newest XLSX and retrying safely… (${attempt}/3)`);
+    if(!isStaleFileError(e)&&e.name!=='OneDriveBusyError')break;
+    db=localSnapshot;workbook=incomingWorkbook;
+    dbState(false,'OneDrive is syncing',`Renoweet is waiting for the XLSX to become stable, then it will retry safely… (${attempt}/4)`);
    }
   }
 
   // Never overwrite the cache on failure. Keep the original local edits for another reconnect.
   db=localSnapshot;localCacheDirty=true;restoredLocalCache=true;fileHandle=null;
   await cacheBrowserState(true);
-  dbState(false,'Reconnect needed','Your local changes are still safe. OneDrive kept changing while Renoweet was merging; wait a few seconds, then tap Connect XLSX and choose the current file again.');
-  alert('Renoweet could not finish the merge because OneDrive changed the XLSX while it was being opened.\n\nYour local changes are still safe and nothing was overwritten. Wait a few seconds for OneDrive to finish syncing, then tap Connect XLSX and choose the current file again.'+(lastError&&!isStaleFileError(lastError)?'\n\nDetails: '+lastError.message:''));
+  dbState(false,'OneDrive still busy','Your local changes are safe. OneDrive did not keep the selected XLSX stable long enough to perform a safe merge.');
+  alert('Renoweet did not overwrite anything. Your local changes are still safe.\n\nOneDrive kept changing the selected XLSX while Renoweet was reading it. Let OneDrive finish syncing, then tap Connect XLSX and select the current file once more. Renoweet will wait for a stable copy before merging.'+(lastError&&!isStaleFileError(lastError)&&lastError?.name!=='OneDriveBusyError'?'\n\nDetails: '+lastError.message:''));
   return false;
  }
 
