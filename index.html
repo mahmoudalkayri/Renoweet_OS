@@ -564,19 +564,48 @@ async function loadWorkbook(h,ask){
  if(restoredLocalCache&&localCacheDirty){
   const ok=confirm('Unsynced Renoweet changes were found on this device.\n\nRenoweet will MERGE them with the current XLSX. Projects and operational records that exist on either side are kept; matching IDs are updated instead of duplicated. Deletions are respected when they can be verified from the last synced copy.\n\nContinue with multi-device safe merge?');
   if(!ok){dbState(false,'Local changes kept','Nothing was overwritten. Your unsynced changes are still safe in this browser.');return false}
-  const remoteDb=databaseFromWorkbook(incomingWorkbook);
-  const result=mergeDatabases(lastSyncedDb,db,remoteDb);
-  db=result.merged;workbook=incomingWorkbook;fileHandle=h;resetProjectShadows();
-  const remembered=await rememberHandle(h);
+
+  // Keep the exact local snapshot throughout reconnect. OneDrive can update the file
+  // while it is being opened; if that happens, re-read the newest file and merge again
+  // instead of treating the newly selected handle as stale forever.
+  const localSnapshot=cloneSafe(db), remembered=await rememberHandle(h);
+  fileHandle=h;
+  let lastResult=null,lastError=null;
   dbState(true,'Merging device + XLSX…',f.name+(remembered?' • file remembered':' • connected for this session'));
-  await saveWorkbook(true);
-  if(fileHandle&&!localCacheDirty){
-   restoredLocalCache=false;
-   const st=result.stats,detail=`Merged safely • ${st.added} added/kept • ${st.deleted} verified deletion(s) • ${st.conflicts} conflict(s) resolved`;
-   staleFileAlerted=false;dbState(true,'Merged + saved ✓',detail);render();toast('Multi-device merge saved');
-   if(st.conflicts)alert(`Renoweet merged this device with the current XLSX and saved the result.\n\n${st.conflicts} overlapping change(s) were found. For the same field changed on both devices, Renoweet kept the value with the newest field timestamp (falling back to the project Updated timestamp for older records). Records with different IDs were kept from both devices.\n\nNo whole database snapshot was blindly overwritten.`);
+
+  for(let attempt=1;attempt<=3;attempt++){
+   try{
+    if(attempt>1)await new Promise(r=>setTimeout(r,500*attempt));
+    const freshFile=await h.getFile();
+    const freshWorkbook=XLSX.read(await freshFile.arrayBuffer(),{type:'array',cellDates:false});
+    const remoteDb=databaseFromWorkbook(freshWorkbook);
+    lastResult=mergeDatabases(lastSyncedDb,localSnapshot,remoteDb);
+    db=lastResult.merged;workbook=freshWorkbook;resetProjectShadows();
+    replaceDatabaseSheets();
+    const bytes=XLSX.write(workbook,{bookType:'xlsx',type:'array'});
+    const w=await h.createWritable();
+    await w.write(bytes);
+    await w.close();
+
+    localCacheDirty=false;restoredLocalCache=false;staleFileAlerted=false;
+    await cacheBrowserState(false);
+    const st=lastResult.stats,detail=`Merged safely • ${st.added} added/kept • ${st.deleted} verified deletion(s) • ${st.conflicts} conflict(s) resolved`;
+    dbState(true,'Merged + saved ✓',detail);render();toast('Multi-device merge saved');
+    if(st.conflicts)alert(`Renoweet merged this device with the current XLSX and saved the result.\n\n${st.conflicts} overlapping change(s) were found. For the same field changed on both devices, Renoweet kept the value with the newest field timestamp (falling back to the project Updated timestamp for older records). Records with different IDs were kept from both devices.\n\nNo whole database snapshot was blindly overwritten.`);
+    return true;
+   }catch(e){
+    lastError=e;console.warn('Reconnect merge attempt '+attempt+' failed',e);
+    if(!isStaleFileError(e))break;
+    dbState(false,'OneDrive changed during merge',`Refreshing newest XLSX and retrying safely… (${attempt}/3)`);
+   }
   }
-  return !localCacheDirty
+
+  // Never overwrite the cache on failure. Keep the original local edits for another reconnect.
+  db=localSnapshot;localCacheDirty=true;restoredLocalCache=true;fileHandle=null;
+  await cacheBrowserState(true);
+  dbState(false,'Reconnect needed','Your local changes are still safe. OneDrive kept changing while Renoweet was merging; wait a few seconds, then tap Connect XLSX and choose the current file again.');
+  alert('Renoweet could not finish the merge because OneDrive changed the XLSX while it was being opened.\n\nYour local changes are still safe and nothing was overwritten. Wait a few seconds for OneDrive to finish syncing, then tap Connect XLSX and choose the current file again.'+(lastError&&!isStaleFileError(lastError)?'\n\nDetails: '+lastError.message:''));
+  return false;
  }
 
  workbook=incomingWorkbook;fileHandle=h;parseWorkbook();resetProjectShadows();restoredLocalCache=false;localCacheDirty=false;
