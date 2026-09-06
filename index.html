@@ -372,7 +372,7 @@ let googleAccessToken='', googleTokenClient=null, planWeekOffset=0;
 const LOCAL_CACHE_DB='renoweet-os-local-cache-v1';
 const LOCAL_CACHE_STORE='state';
 const LOCAL_CACHE_KEY='renoweet-db';
-let restoredLocalCache=false;
+let restoredLocalCache=false, localCacheDirty=false;
 const GOOGLE_CAL_SCOPE='https://www.googleapis.com/auth/calendar.events';
 const GOOGLE_CALENDAR_ID='primary';
 const GOOGLE_TIMEZONE='Europe/Amsterdam';
@@ -396,8 +396,9 @@ function dbState(ok,msg,detail=''){ $('dbDot').className='dot '+(ok?'ok':'warn')
 function openLocalCacheDb(){return new Promise((resolve,reject)=>{let r=indexedDB.open(LOCAL_CACHE_DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(LOCAL_CACHE_STORE))r.result.createObjectStore(LOCAL_CACHE_STORE)};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 async function cacheBrowserState(dirty=true){
  try{
+  localCacheDirty=!!dirty;
   let d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readwrite');
-  tx.objectStore(LOCAL_CACHE_STORE).put({db:structuredClone(db),savedAt:new Date().toISOString(),dirty:!!dirty},LOCAL_CACHE_KEY);
+  tx.objectStore(LOCAL_CACHE_STORE).put({db:structuredClone(db),savedAt:new Date().toISOString(),dirty:localCacheDirty},LOCAL_CACHE_KEY);
   await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
  }catch(e){console.warn('Could not cache Renoweet data locally.',e)}
 }
@@ -410,8 +411,10 @@ async function readBrowserCache(){
 async function restoreBrowserCache(){
  let c=await readBrowserCache();
  if(!c?.db||!Array.isArray(c.db.projects))return false;
- db=c.db;restoredLocalCache=true;
- dbState(false,'Local copy restored',`Last cached ${c.savedAt?new Date(c.savedAt).toLocaleString('nl-NL'):''} • reconnect XLSX to save to OneDrive.`);
+ db=c.db;restoredLocalCache=true;localCacheDirty=!!c.dirty;
+ const stamp=c.savedAt?new Date(c.savedAt).toLocaleString('nl-NL'):'';
+ if(localCacheDirty)dbState(false,'Unsynced local changes',`Your changes are safe on this device (${stamp}). Reconnect XLSX to sync them to OneDrive — Renoweet will not replace them with an older file.`);
+ else dbState(false,'Local copy restored',`Last cached ${stamp} • reconnect XLSX to save to OneDrive.`);
  render();return true
 }
 
@@ -424,8 +427,26 @@ async function connectWorkbook(){
 }
 async function loadWorkbook(h,ask){
  if(!(await verifyPermission(h,ask)))return false;
- let f=await h.getFile();workbook=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:false});
- fileHandle=h;parseWorkbook();restoredLocalCache=false;await cacheBrowserState(false);const remembered=await rememberHandle(h);dbState(true,'Connected',f.name+(remembered?' • autosave on':' • connected for this session'));render();return true
+ let f=await h.getFile();
+ const incomingWorkbook=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:false});
+
+ // Critical recovery rule: a dirty browser cache is never silently replaced by the XLSX.
+ // When the user reconnects, keep the newer local working copy and sync it into the selected workbook.
+ if(restoredLocalCache&&localCacheDirty){
+  const ok=confirm('Unsynced Renoweet changes were found on this device.\n\nRenoweet will KEEP your local changes and sync them into the XLSX you selected. The XLSX will not overwrite your current work.\n\nContinue with safe recovery?');
+  if(!ok){dbState(false,'Local changes kept','Nothing was overwritten. Your unsynced changes are still safe in this browser.');return false}
+  workbook=incomingWorkbook;fileHandle=h;
+  const remembered=await rememberHandle(h);
+  dbState(true,'Syncing recovered changes…',f.name+(remembered?' • file remembered':' • connected for this session'));
+  await saveWorkbook(true);
+  if(fileHandle&&!localCacheDirty){restoredLocalCache=false;dbState(true,'Recovered + saved ✓','Your local changes were written to '+f.name+' and OneDrive can sync the updated XLSX.');render();toast('Local changes recovered to XLSX')}
+  return !localCacheDirty
+ }
+
+ workbook=incomingWorkbook;fileHandle=h;parseWorkbook();restoredLocalCache=false;localCacheDirty=false;
+ await cacheBrowserState(false);
+ const remembered=await rememberHandle(h);
+ dbState(true,'Connected',f.name+(remembered?' • autosave on':' • connected for this session'));render();return true
 }
 function rows(name){let ws=workbook?.Sheets?.[name];return ws?XLSX.utils.sheet_to_json(ws,{defval:'',raw:false}):[]}
 function parseWorkbook(){
@@ -1250,9 +1271,19 @@ $('connectBtn').onclick=connectWorkbook;$('saveNowBtn').onclick=()=>saveWorkbook
  }
  try{
   let h=await rememberedHandle();
-  if(h&&await verifyPermission(h,false))await loadWorkbook(h,false);
-  else if(restoredLocalCache)dbState(false,'Local copy restored','Your data survived the refresh. Click Connect XLSX when you want to save back to OneDrive.');
- }catch(e){console.warn(e);if(restoredLocalCache)dbState(false,'Local copy restored','Your data survived the refresh. Click Connect XLSX when you want to save back to OneDrive.')}
+  if(h&&await verifyPermission(h,false)){
+   if(restoredLocalCache&&localCacheDirty){
+    // Do not auto-load the XLSX over unsynced local work after a refresh.
+    dbState(false,'Unsynced local changes','Your changes are safe. Tap Connect XLSX when ready; Renoweet will keep these changes and sync them into OneDrive.');
+   }else await loadWorkbook(h,false);
+  }else if(restoredLocalCache){
+   if(localCacheDirty)dbState(false,'Unsynced local changes','Your changes survived the refresh. Tap Connect XLSX to sync them safely to OneDrive.');
+   else dbState(false,'Local copy restored','Your data survived the refresh. Click Connect XLSX when you want to save back to OneDrive.');
+  }
+ }catch(e){console.warn(e);if(restoredLocalCache){
+  if(localCacheDirty)dbState(false,'Unsynced local changes','Your changes survived the refresh. Tap Connect XLSX to sync them safely to OneDrive.');
+  else dbState(false,'Local copy restored','Your data survived the refresh. Click Connect XLSX when you want to save back to OneDrive.');
+ }}
 })();
 </script>
 </body>
