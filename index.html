@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
   --bg:#0b1020;--panel:#11182a;--panel2:#172238;--line:#26344f;--text:#edf3f8;
@@ -163,6 +164,27 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
     line-height:1.25!important;z-index:999!important;
   }
 }
+
+
+/* --- Renoweet Planning + Google Calendar --- */
+.plan-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.plan-toolbar .spacer{margin-left:auto}
+.plan-status{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#0d1525;font-size:12px;color:var(--muted)}
+.plan-status.ok{border-color:#326d36;color:#bff2c1;background:#17351a}
+.plan-grid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:9px;overflow:auto;padding-bottom:4px}
+.plan-day{min-height:190px;background:#0d1423;border:1px solid var(--line);border-radius:12px;padding:9px}
+.plan-day.today{border-color:#4f9837}
+.plan-day-head{display:flex;justify-content:space-between;gap:8px;align-items:center;color:var(--muted);font-size:12px;margin-bottom:8px}
+.plan-job{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:7px;cursor:pointer}
+.plan-job:hover{border-color:#4f7eb6}
+.plan-job b{display:block;font-size:13px}.plan-job small{display:block;color:var(--muted);line-height:1.4;margin-top:4px}
+.plan-sync{font-size:11px;margin-top:6px}.plan-sync.synced{color:#9be49d}.plan-sync.local{color:#f5c56b}
+.plan-list{display:grid;gap:9px;margin-top:14px}
+.plan-list-row{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.plan-date{font-weight:800}.plan-date small{display:block;color:var(--muted);font-weight:400;margin-top:3px}
+.google-setup{background:#0f1c2f;border:1px solid #35577e;border-radius:13px;padding:14px;margin-bottom:14px}
+.google-setup h3{margin:0 0 7px}.google-setup p{margin:0 0 10px;color:var(--muted);font-size:13px;line-height:1.45}
+@media(max-width:900px){.plan-grid{grid-template-columns:repeat(7,78vw)}.plan-list-row{grid-template-columns:1fr}.plan-list-row .actions{width:100%}.plan-list-row .actions .btn{flex:1}}
 
 </style>
 </head>
@@ -346,6 +368,10 @@ const serviceTemplates=[
  {keys:['installation','installatie','technical','technische'],desc:'Technische installatie / montage',unit:'uur',price:62.5}
 ];
 let db={projects:[],bookkeeping:[],deleted:[]}, workbook=null,fileHandle=null,saveTimer=null,isSaving=false,currentView='dashboard',currentProjectId=null,currentTab='intake';
+let googleAccessToken='', googleTokenClient=null, planWeekOffset=0;
+const GOOGLE_CAL_SCOPE='https://www.googleapis.com/auth/calendar.events';
+const GOOGLE_CALENDAR_ID='primary';
+const GOOGLE_TIMEZONE='Europe/Amsterdam';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const money=v=>CURRENCY.format(Number(v)||0),today=()=>new Date().toISOString().slice(0,10);
@@ -382,7 +408,7 @@ function parseWorkbook(){
   id:r['Project ID'],created:r.Created||today(),updated:r.Updated||today(),stage:r.Stage||'Lead',title:r.Title||'',
   customer:{name:r['Customer Name']||'',phone:r.Phone||'',email:r.Email||'',address:r.Address||''},
   description:r.Description||'',scope:r.Scope||'',notes:r.Notes||'',
-  schedule:{start:r['Schedule Start']||'',end:r['Schedule End']||'',time:r['Schedule Time']||'',notes:r['Schedule Notes']||''},
+  schedule:{start:r['Schedule Start']||'',end:r['Schedule End']||'',time:r['Schedule Time']||'',endTime:r['Schedule End Time']||'',notes:r['Schedule Notes']||'',calendarEventId:r['Google Calendar Event ID']||'',calendarHtmlLink:r['Google Calendar Link']||'',calendarSyncedAt:r['Google Calendar Synced At']||''},
   quote:{number:r['Quote Number']||'',date:r['Quote Date']||today(),validDays:+r['Quote Valid Days']||14,vat:+r['Quote VAT']||21,status:r['Quote Status']||'Draft'},
   invoice:{number:r['Invoice Number']||'',date:r['Invoice Date']||today(),dueDays:+r['Invoice Due Days']||14,status:r['Invoice Status']||'Draft'},
   estimate:est.filter(x=>x['Project ID']===r['Project ID']).map(x=>({id:x['Line ID']||lineid(),desc:x.Description||'',qty:+x.Qty||0,unit:x.Unit||'',rate:+x.Rate||0})),
@@ -395,8 +421,8 @@ function parseWorkbook(){
 function sheetFromRows(headers,dataRows){return XLSX.utils.json_to_sheet(dataRows,{header:headers})}
 function replaceDatabaseSheets(){
  if(!workbook)workbook=XLSX.utils.book_new();
- let projectHeaders=["Project ID","Created","Updated","Stage","Title","Customer Name","Phone","Email","Address","Description","Scope","Notes","Schedule Start","Schedule End","Schedule Time","Schedule Notes","Quote Number","Quote Date","Quote Valid Days","Quote VAT","Quote Status","Invoice Number","Invoice Date","Invoice Due Days","Invoice Status"];
- let projectRows=db.projects.map(p=>({"Project ID":p.id,Created:p.created,Updated:p.updated,Stage:p.stage,Title:p.title,"Customer Name":p.customer.name,Phone:p.customer.phone,Email:p.customer.email,Address:p.customer.address,Description:p.description,Scope:p.scope,Notes:p.notes,"Schedule Start":p.schedule.start,"Schedule End":p.schedule.end,"Schedule Time":p.schedule.time,"Schedule Notes":p.schedule.notes,"Quote Number":p.quote.number,"Quote Date":p.quote.date,"Quote Valid Days":p.quote.validDays,"Quote VAT":p.quote.vat,"Quote Status":p.quote.status,"Invoice Number":p.invoice.number,"Invoice Date":p.invoice.date,"Invoice Due Days":p.invoice.dueDays,"Invoice Status":p.invoice.status}));
+ let projectHeaders=["Project ID","Created","Updated","Stage","Title","Customer Name","Phone","Email","Address","Description","Scope","Notes","Schedule Start","Schedule End","Schedule Time","Schedule End Time","Schedule Notes","Google Calendar Event ID","Google Calendar Link","Google Calendar Synced At","Quote Number","Quote Date","Quote Valid Days","Quote VAT","Quote Status","Invoice Number","Invoice Date","Invoice Due Days","Invoice Status"];
+ let projectRows=db.projects.map(p=>({"Project ID":p.id,Created:p.created,Updated:p.updated,Stage:p.stage,Title:p.title,"Customer Name":p.customer.name,Phone:p.customer.phone,Email:p.customer.email,Address:p.customer.address,Description:p.description,Scope:p.scope,Notes:p.notes,"Schedule Start":p.schedule.start,"Schedule End":p.schedule.end,"Schedule Time":p.schedule.time,"Schedule End Time":p.schedule.endTime||"","Schedule Notes":p.schedule.notes,"Google Calendar Event ID":p.schedule.calendarEventId||"","Google Calendar Link":p.schedule.calendarHtmlLink||"","Google Calendar Synced At":p.schedule.calendarSyncedAt||"","Quote Number":p.quote.number,"Quote Date":p.quote.date,"Quote Valid Days":p.quote.validDays,"Quote VAT":p.quote.vat,"Quote Status":p.quote.status,"Invoice Number":p.invoice.number,"Invoice Date":p.invoice.date,"Invoice Due Days":p.invoice.dueDays,"Invoice Status":p.invoice.status}));
  let estRows=[],matRows=[],checkRows=[];
  db.projects.forEach(p=>{
   (p.estimate||[]).forEach((x,i)=>estRows.push({"Project ID":p.id,"Line ID":x.id||lineid(),Description:x.desc,Qty:+x.qty||0,Unit:x.unit,Rate:+x.rate||0}));
@@ -483,7 +509,21 @@ function dashboardHTML(){
 function projectsHTML(){return `<div class="card" style="margin-bottom:12px"><input id="projectFilter" placeholder="Search projects, customers or addresses"></div><div id="projectList">${projectRowsHTML(db.projects)}</div>`}
 function pipelineHTML(){return `<div class="kanban">${stages.map(s=>`<div class="kanban-col"><h3>${s} (${db.projects.filter(p=>p.stage===s).length})</h3>${db.projects.filter(p=>p.stage===s).map(p=>`<div class="jobcard" onclick="openProject('${p.id}')"><b>${esc(p.title||'Untitled')}</b><small>${esc(p.customer.name||'')}</small><div style="margin-top:7px">${money(projectTotals(p).total)}</div></div>`).join('')||'<div class="small">No jobs</div>'}</div>`).join('')}</div>`}
 function customersHTML(){let map={};db.projects.forEach(p=>{let k=(p.customer.email||p.customer.phone||p.customer.name||p.id).toLowerCase();if(!map[k])map[k]={...p.customer,count:0,total:0};map[k].count++;map[k].total+=projectTotals(p).total});let cs=Object.values(map);return cs.length?`<div class="mobile-cards">${cs.map(c=>`<div class="project-mobile"><b>${esc(c.name)}</b><div class="meta">${esc(c.phone)}<br>${esc(c.email)}<br>${esc(c.address)}<br>${c.count} project(s) • ${money(c.total)}</div></div>`).join('')}</div><div class="tablewrap desktop-table"><table><thead><tr><th>Customer</th><th>Phone</th><th>Email</th><th>Address</th><th>Projects</th><th>Value</th></tr></thead><tbody>${cs.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.phone)}</td><td>${esc(c.email)}</td><td>${esc(c.address)}</td><td>${c.count}</td><td>${money(c.total)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card empty">No customers yet.</div>'}
-function scheduleHTML(){let ps=db.projects.filter(p=>p.schedule?.start).sort((a,b)=>String(a.schedule.start).localeCompare(String(b.schedule.start)));return ps.length?projectRowsHTML(ps.map(p=>p)):'<div class="card empty">No scheduled jobs yet.</div>'}
+function scheduleHTML(){
+ const ps=db.projects.filter(p=>p.schedule?.start).sort((a,b)=>String(a.schedule.start).localeCompare(String(b.schedule.start))||String(a.schedule.time||'').localeCompare(String(b.schedule.time||'')));
+ const connected=!!googleAccessToken;
+ const clientId=getGoogleClientId();
+ const todayStr=today();
+ const start=weekStart(new Date());
+ const days=[...Array(7)].map((_,i)=>{let d=new Date(start);d.setDate(start.getDate()+i);return localDateISO(d)});
+ const week=days.map(ds=>{
+   const jobs=ps.filter(p=>scheduleTouchesDate(p,ds));
+   return `<div class="plan-day ${ds===todayStr?'today':''}"><div class="plan-day-head"><b>${planDayLabel(ds)}</b><span>${ds.slice(8,10)}</span></div>${jobs.length?jobs.map(p=>planJobCard(p)).join(''):'<div class="small">No jobs</div>'}</div>`;
+ }).join('');
+ const setup=!clientId?`<div class="google-setup"><h3>Connect Renoweet OS to Google Calendar</h3><p>Enter the Google OAuth Web Client ID once. It stays in this browser only. In Google Cloud, enable Google Calendar API and add this Renoweet OS website address as an Authorized JavaScript origin.</p><div class="formgrid"><div class="field full"><label>Google OAuth Client ID</label><input id="googleClientIdInput" placeholder="...apps.googleusercontent.com" value="${esc(clientId)}"></div></div><div class="actions" style="margin-top:10px"><button class="btn primary" onclick="saveGoogleClientId()">Save Google Client ID</button></div></div>`:'';
+ const rows=ps.map(p=>`<div class="plan-list-row"><div class="plan-date">${fmtDate(p.schedule.start)}<small>${esc(scheduleTimeLabel(p))}</small></div><div><b>${esc(p.title||'Untitled')}</b><div class="small">${esc(p.customer.name||'')} ${p.customer.address?'• '+esc(p.customer.address):''}</div><div class="plan-sync ${p.schedule.calendarEventId?'synced':'local'}">${p.schedule.calendarEventId?'Google Calendar linked':'Renoweet OS only'}</div></div><div class="actions"><button class="btn" onclick="openProject('${p.id}','schedule')">Open</button><button class="btn primary" onclick="syncProjectCalendarById('${p.id}')">${p.schedule.calendarEventId?'Update calendar':'Add to calendar'}</button>${p.schedule.calendarEventId?`<button class="btn danger" onclick="removeProjectCalendarById('${p.id}')">Remove calendar</button>`:''}</div></div>`).join('');
+ return `${setup}<div class="plan-toolbar"><div class="plan-status ${connected?'ok':''}">${connected?'● Google Calendar connected':'○ Google Calendar not connected'}</div><button class="btn" onclick="connectGoogleCalendar()">${connected?'Reconnect Google':'Connect Google Calendar'}</button><button class="btn primary" onclick="syncAllScheduledJobs()">Sync all jobs</button><span class="spacer"></span><button class="btn" onclick="shiftPlanWeek(-7)">← Previous</button><button class="btn" onclick="planWeekOffset=0;render()">This week</button><button class="btn" onclick="shiftPlanWeek(7)">Next →</button></div><div class="plan-grid">${week}</div>${ps.length?`<div class="section-title"><h2>Scheduled jobs</h2><span class="small">Renoweet OS → Google Calendar</span></div><div class="plan-list">${rows}</div>`:'<div class="card empty" style="margin-top:14px">No scheduled jobs yet. Open a project and use its Schedule tab.</div>'}`;
+}
 function backupHTML(){return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))"><div class="card"><h3>OneDrive XLSX database</h3><p class="small">Use the included <b>Renoweet_OS_Database.xlsx</b>. Put it in your local OneDrive folder, then connect it here in Edge or Chrome.</p><button class="btn primary" onclick="connectWorkbook()">Connect XLSX</button></div><div class="card"><h3>Save behavior</h3><p class="small">Project changes autosave to the local XLSX. OneDrive then syncs the file. Invoices sent from Renoweet OS are stored in a dedicated Bookkeeping sheet inside this OS database. Your formatted bookkeeping master workbook remains separate, so its formatting and charts are not exposed to browser rewriting.</p><button class="btn" onclick="saveWorkbook(true)">Save now</button></div><div class="card"><h3>PIN security</h3><p class="small">Renoweet OS locks when a new browser session starts. The PIN is stored on this device as a salted cryptographic hash, not as plain text.</p><div class="actions"><button class="btn" onclick="lockRenoweet()">Lock now</button><button class="btn" onclick="changePin()">Change PIN</button></div></div><div class="card"><h3>Mobile use</h3><p class="small">The interface itself is mobile friendly. Direct local XLSX writing is most reliable on desktop Edge/Chrome. On phones, file-system access support depends on the browser/device.</p></div></div>`}
 function render(){let root=$('viewRoot');if(currentView==='dashboard')root.innerHTML=dashboardHTML();if(currentView==='projects')root.innerHTML=projectsHTML();if(currentView==='pipeline')root.innerHTML=pipelineHTML();if(currentView==='customers')root.innerHTML=customersHTML();if(currentView==='schedule')root.innerHTML=scheduleHTML();if(currentView==='backup')root.innerHTML=backupHTML();if(currentView==='projects'){let f=$('projectFilter');f.oninput=()=>{$('projectList').innerHTML=projectRowsHTML(db.projects.filter(p=>JSON.stringify(p).toLowerCase().includes(f.value.toLowerCase())))}}}
 
@@ -499,7 +539,7 @@ function tabHTML(p,t){
  if(t==='estimate')return `<div class="tablewrap"><table class="lineitems"><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Rate</th><th>Total</th><th></th></tr></thead><tbody id="estRows">${p.estimate.map((x,i)=>`<tr><td><input class="e_desc" value="${esc(x.desc)}"></td><td><input class="e_qty" type="number" step=".01" value="${x.qty}"></td><td><input class="e_unit" value="${esc(x.unit)}"></td><td><input class="e_rate" type="number" step=".01" value="${x.rate}"></td><td>${money(x.qty*x.rate)}</td><td><button class="btn danger" onclick="removeEst(${i})">×</button></td></tr>`).join('')}</tbody></table></div><button class="btn" style="margin-top:10px" onclick="addEstimate()">+ Line</button>${totalsHTML(p)}`;
  if(t==='quote')return quoteHTML(p);
  if(t==='materials')return `<div class="tablewrap"><table class="lineitems"><thead><tr><th>Material</th><th>Qty</th><th>Supplier</th><th>Cost</th><th></th></tr></thead><tbody id="matRows">${p.materials.map((x,i)=>`<tr><td><input class="m_desc" value="${esc(x.desc)}"></td><td><input class="m_qty" value="${esc(x.qty)}"></td><td><input class="m_supplier" value="${esc(x.supplier)}"></td><td><input class="m_cost" type="number" step=".01" value="${x.cost}"></td><td><button class="btn danger" onclick="removeMat(${i})">×</button></td></tr>`).join('')}</tbody></table></div><button class="btn" style="margin-top:10px" onclick="addMaterial()">+ Material</button>`;
- if(t==='schedule')return `<div class="formgrid"><div class="field"><label>Start date</label><input id="s_start" type="date" value="${p.schedule.start}"></div><div class="field"><label>End date</label><input id="s_end" type="date" value="${p.schedule.end}"></div><div class="field"><label>Time / arrival window</label><input id="s_time" value="${esc(p.schedule.time)}"></div><div class="field full"><label>Planning notes</label><textarea id="s_notes">${esc(p.schedule.notes)}</textarea></div></div><div class="ai"><b>Customer confirmation</b><p>Generate a ready-to-send appointment message.</p><button class="btn" onclick="copyScheduleMessage()">Copy message</button></div>`;
+ if(t==='schedule')return `<div class="formgrid"><div class="field"><label>Start date *</label><input id="s_start" type="date" value="${p.schedule.start}"></div><div class="field"><label>End date *</label><input id="s_end" type="date" value="${p.schedule.end||p.schedule.start}"></div><div class="field"><label>Start time *</label><input id="s_time" type="time" value="${normalizeTimeInput(p.schedule.time)}"></div><div class="field"><label>End time *</label><input id="s_endtime" type="time" value="${normalizeTimeInput(p.schedule.endTime)||'17:00'}"></div><div class="field full"><label>Planning notes</label><textarea id="s_notes">${esc(p.schedule.notes)}</textarea></div></div><div class="actions" style="margin-top:12px"><button class="btn primary" onclick="saveAndSyncCurrentSchedule()">Save + sync Google Calendar</button>${p.schedule.calendarEventId?`<button class="btn danger" onclick="removeCurrentProjectCalendar()">Remove from Google Calendar</button>`:''}${p.schedule.calendarHtmlLink?`<button class="btn" onclick="window.open('${esc(p.schedule.calendarHtmlLink)}','_blank')">Open Google Calendar</button>`:''}</div><div class="small" style="margin-top:8px">${p.schedule.calendarEventId?'Linked to Google Calendar'+(p.schedule.calendarSyncedAt?' • last sync '+esc(p.schedule.calendarSyncedAt):''):'Not yet linked to Google Calendar.'}</div><div class="ai"><b>Customer confirmation</b><p>Generate a ready-to-send appointment message.</p><button class="btn" onclick="copyScheduleMessage()">Copy message</button></div>`;
  if(t==='messages'){let qs=`Beste ${p.customer.name||'klant'}, bedankt voor uw aanvraag. De offerte voor "${p.title||'uw project'}" staat klaar. Totaal: ${money(projectTotals(p).total)} incl. btw. Groet, Renoweet`,rev=`Beste ${p.customer.name||'klant'}, bedankt voor de opdracht. Als u tevreden bent, zou een korte review ons enorm helpen. Alvast bedankt! Groet, Renoweet`;return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))">${msgCard('Quotation message',qs)}${msgCard('Review request',rev)}${msgCard('Referral request',`Beste ${p.customer.name||'klant'}, kent u iemand die ook een renovatie- of technische klus heeft? Een aanbeveling wordt zeer gewaardeerd. Groet, Renoweet`)}</div>`}
  if(t==='invoice')return invoiceHTML(p);
  if(t==='checklist')return `<div class="checklist">${p.checklist.map((x,i)=>`<label><input type="checkbox" class="c_done" data-i="${i}" ${x.done?'checked':''}><span>${esc(x.text)}</span></label>`).join('')}</div><div class="actions" style="margin-top:12px"><button class="btn" onclick="addChecklist()">+ Item</button><button class="btn primary" onclick="completeProject()">Mark completed</button></div>`;
@@ -821,7 +861,7 @@ function msgCard(t,m){return `<div class="card"><h3>${t}</h3><textarea style="mi
 function bindTab(){let inp=$('photoInput');if(inp)inp.onchange=e=>{let b=$('photoPreview');b.innerHTML='';[...e.target.files].slice(0,8).forEach(f=>{let i=document.createElement('img');i.src=URL.createObjectURL(f);i.style.cssText='width:92px;height:72px;object-fit:cover;border-radius:9px;border:1px solid var(--line)';b.appendChild(i)})}}
 function readEstimate(p){let rs=document.querySelectorAll('#estRows tr');if(rs.length)p.estimate=[...rs].map((r,i)=>({id:p.estimate[i]?.id||lineid(),desc:r.querySelector('.e_desc').value,qty:+r.querySelector('.e_qty').value||0,unit:r.querySelector('.e_unit').value,rate:+r.querySelector('.e_rate').value||0}))}
 function readMaterials(p){let rs=document.querySelectorAll('#matRows tr');if(rs.length)p.materials=[...rs].map((r,i)=>({id:p.materials[i]?.id||lineid(),desc:r.querySelector('.m_desc').value,qty:r.querySelector('.m_qty').value,supplier:r.querySelector('.m_supplier').value,cost:+r.querySelector('.m_cost').value||0}))}
-function saveProjectFromForm(show=true){let p=getP();if(!p)return;if($('f_title')){p.title=$('f_title').value;p.stage=$('f_stage').value;p.customer.name=$('f_name').value;p.customer.phone=$('f_phone').value;p.customer.email=$('f_email').value;p.customer.address=$('f_address').value;p.description=$('f_description').value;p.notes=$('f_notes').value}if($('f_scope'))p.scope=$('f_scope').value;readEstimate(p);readMaterials(p);if($('s_start'))p.schedule={start:$('s_start').value,end:$('s_end').value,time:$('s_time').value,notes:$('s_notes').value};if($('q_number')){p.quote.number=$('q_number').value;p.quote.date=$('q_date').value}if($('i_number')){p.invoice.number=$('i_number').value;p.invoice.date=$('i_date').value;p.invoice.dueDays=+$('i_due').value||14}document.querySelectorAll('.c_done').forEach(c=>{if(p.checklist[c.dataset.i])p.checklist[c.dataset.i].done=c.checked});p.updated=today();scheduleSave();if(show)toast()}
+function saveProjectFromForm(show=true){let p=getP();if(!p)return;if($('f_title')){p.title=$('f_title').value;p.stage=$('f_stage').value;p.customer.name=$('f_name').value;p.customer.phone=$('f_phone').value;p.customer.email=$('f_email').value;p.customer.address=$('f_address').value;p.description=$('f_description').value;p.notes=$('f_notes').value}if($('f_scope'))p.scope=$('f_scope').value;readEstimate(p);readMaterials(p);if($('s_start'))p.schedule={...p.schedule,start:$('s_start').value,end:$('s_end').value||$('s_start').value,time:$('s_time').value,endTime:$('s_endtime')?$('s_endtime').value:(p.schedule.endTime||''),notes:$('s_notes').value};if($('q_number')){p.quote.number=$('q_number').value;p.quote.date=$('q_date').value}if($('i_number')){p.invoice.number=$('i_number').value;p.invoice.date=$('i_date').value;p.invoice.dueDays=+$('i_due').value||14}document.querySelectorAll('.c_done').forEach(c=>{if(p.checklist[c.dataset.i])p.checklist[c.dataset.i].done=c.checked});p.updated=today();scheduleSave();if(show)toast()}
 function addEstimate(){let p=getP();readEstimate(p);p.estimate.push({id:lineid(),desc:'',qty:1,unit:'uur',rate:62.5});renderTabs()}
 function removeEst(i){let p=getP();readEstimate(p);p.estimate.splice(i,1);renderTabs()}
 function addMaterial(){let p=getP();readMaterials(p);p.materials.push({id:lineid(),desc:'',qty:1,supplier:'',cost:0});renderTabs()}
@@ -874,9 +914,76 @@ The project will disappear from Renoweet OS project lists, dashboard totals and 
  alert(`"${label}" was moved to the Deleted sheet.`);
 }
 
+
+function getGoogleClientId(){return (localStorage.getItem('renoweetGoogleClientId')||'').trim()}
+function saveGoogleClientId(){let el=$('googleClientIdInput');if(!el)return;let v=el.value.trim();if(!v||!v.endsWith('.apps.googleusercontent.com')){alert('Enter a valid Google OAuth Web Client ID ending in .apps.googleusercontent.com');return}localStorage.setItem('renoweetGoogleClientId',v);googleTokenClient=null;toast('Google Client ID saved');render()}
+function ensureGoogleTokenClient(){
+ const clientId=getGoogleClientId();
+ if(!clientId){alert('First enter your Google OAuth Client ID in Planning.');return false}
+ if(!window.google?.accounts?.oauth2){alert('Google sign-in library is still loading. Check your internet connection and try again.');return false}
+ if(!googleTokenClient){
+   googleTokenClient=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:GOOGLE_CAL_SCOPE,callback:()=>{}});
+ }
+ return true;
+}
+function requestGoogleToken(){
+ return new Promise((resolve,reject)=>{
+   if(googleAccessToken)return resolve(googleAccessToken);
+   if(!ensureGoogleTokenClient())return reject(new Error('Google Calendar is not configured.'));
+   googleTokenClient.callback=(resp)=>{if(resp.error)return reject(new Error(resp.error));googleAccessToken=resp.access_token||'';render();resolve(googleAccessToken)};
+   googleTokenClient.requestAccessToken({prompt:'consent'});
+ });
+}
+async function connectGoogleCalendar(){try{googleAccessToken='';await requestGoogleToken();toast('Google Calendar connected');render()}catch(e){console.error(e);alert('Google Calendar connection failed: '+(e.message||e))}}
+function localDateISO(d){let y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
+function weekStart(){let d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+planWeekOffset);let day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);return d}
+function shiftPlanWeek(n){planWeekOffset+=n;render()}
+function planDayLabel(ds){let d=new Date(ds+'T12:00:00');return d.toLocaleDateString('en-GB',{weekday:'short',month:'short'})}
+function normalizeTimeInput(v){v=String(v||'').trim();let m=v.match(/^(\d{1,2}):(\d{2})/);if(!m)return '';return String(Math.min(23,+m[1])).padStart(2,'0')+':'+m[2]}
+function scheduleTimeLabel(p){let s=normalizeTimeInput(p.schedule.time),e=normalizeTimeInput(p.schedule.endTime);return s?(s+(e?' – '+e:'')):'Time not set'}
+function scheduleTouchesDate(p,ds){let a=p.schedule.start||'',b=p.schedule.end||a;return !!a&&ds>=a&&ds<=b}
+function planJobCard(p){return `<div class="plan-job" onclick="openProject('${p.id}','schedule')"><b>${esc(normalizeTimeInput(p.schedule.time)||'--:--')} • ${esc(p.title||'Untitled')}</b><small>${esc(p.customer.name||'')}${p.customer.address?'<br>'+esc(p.customer.address):''}</small><div class="plan-sync ${p.schedule.calendarEventId?'synced':'local'}">${p.schedule.calendarEventId?'✓ Calendar':'○ OS only'}</div></div>`}
+function validateSchedule(p){
+ const s=p.schedule||{};if(!s.start)return 'Start date is required.';if(!s.end)s.end=s.start;if(s.end<s.start)return 'End date cannot be before start date.';
+ if(!normalizeTimeInput(s.time))return 'Start time is required.';if(!normalizeTimeInput(s.endTime))return 'End time is required.';
+ if(s.start===s.end&&s.endTime<=s.time)return 'End time must be after start time.';return '';
+}
+function calendarDateTime(date,time){return `${date}T${normalizeTimeInput(time)}:00`}
+function calendarEventBody(p){
+ const s=p.schedule,endDate=s.end||s.start;
+ return {summary:`Renoweet – ${p.title||p.id}`,location:p.customer.address||'',description:[`Renoweet project: ${p.id}`,p.customer.name?`Customer: ${p.customer.name}`:'',p.customer.phone?`Phone: ${p.customer.phone}`:'',p.description?`Work: ${p.description}`:'',s.notes?`Planning notes: ${s.notes}`:''].filter(Boolean).join('\n'),start:{dateTime:calendarDateTime(s.start,s.time),timeZone:GOOGLE_TIMEZONE},end:{dateTime:calendarDateTime(endDate,s.endTime),timeZone:GOOGLE_TIMEZONE},reminders:{useDefault:true},extendedProperties:{private:{renoweetProjectId:String(p.id)}}};
+}
+async function calendarFetch(path,options={}){
+ const token=await requestGoogleToken();
+ const res=await fetch('https://www.googleapis.com/calendar/v3'+path,{...options,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(options.headers||{})}});
+ if(res.status===401){googleAccessToken='';throw new Error('Google authorization expired. Connect Google Calendar again.')}
+ if(res.status===204)return null;
+ const body=await res.json().catch(()=>({}));if(!res.ok)throw new Error(body?.error?.message||`Google Calendar error ${res.status}`);return body;
+}
+async function syncProjectCalendar(p){
+ const err=validateSchedule(p);if(err)throw new Error(err);
+ const body=calendarEventBody(p),cal=encodeURIComponent(GOOGLE_CALENDAR_ID);let ev;
+ if(p.schedule.calendarEventId){
+   try{ev=await calendarFetch(`/calendars/${cal}/events/${encodeURIComponent(p.schedule.calendarEventId)}`,{method:'PUT',body:JSON.stringify(body)})}
+   catch(e){if(/404|not found/i.test(e.message)){p.schedule.calendarEventId='';ev=await calendarFetch(`/calendars/${cal}/events`,{method:'POST',body:JSON.stringify(body)})}else throw e}
+ }else ev=await calendarFetch(`/calendars/${cal}/events`,{method:'POST',body:JSON.stringify(body)});
+ p.schedule.calendarEventId=ev.id||p.schedule.calendarEventId;p.schedule.calendarHtmlLink=ev.htmlLink||'';p.schedule.calendarSyncedAt=new Date().toLocaleString('en-GB');p.updated=today();scheduleSave();return ev;
+}
+async function syncProjectCalendarById(id){let p=db.projects.find(x=>x.id===id);if(!p)return;try{await syncProjectCalendar(p);toast('Google Calendar updated');render();if(currentProjectId===id)renderTabs()}catch(e){console.error(e);alert('Could not sync this job: '+(e.message||e))}}
+async function saveAndSyncCurrentSchedule(){let p=getP();saveProjectFromForm(false);if(!p)return;await syncProjectCalendarById(p.id)}
+async function syncAllScheduledJobs(){
+ const jobs=db.projects.filter(p=>p.schedule?.start);if(!jobs.length){alert('There are no scheduled jobs to sync.');return}
+ try{await requestGoogleToken();let ok=0,failed=[];for(const p of jobs){try{await syncProjectCalendar(p);ok++}catch(e){failed.push(`${p.title||p.id}: ${e.message}`)}}scheduleSave();render();if(failed.length)alert(`${ok} job(s) synced.\n\nCould not sync:\n${failed.join('\n')}`);else toast(`${ok} job(s) synced to Google Calendar`)}catch(e){alert('Google Calendar sync failed: '+(e.message||e))}
+}
+async function removeProjectCalendar(p){
+ if(!p?.schedule?.calendarEventId)return;await calendarFetch(`/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events/${encodeURIComponent(p.schedule.calendarEventId)}`,{method:'DELETE'});p.schedule.calendarEventId='';p.schedule.calendarHtmlLink='';p.schedule.calendarSyncedAt='';p.updated=today();scheduleSave();
+}
+async function removeProjectCalendarById(id){let p=db.projects.find(x=>x.id===id);if(!p||!p.schedule.calendarEventId)return;if(!confirm(`Remove "${p.title||p.id}" from Google Calendar? The Renoweet OS planning entry will stay.`))return;try{await removeProjectCalendar(p);toast('Removed from Google Calendar');render();if(currentProjectId===id)renderTabs()}catch(e){console.error(e);alert('Could not remove calendar event: '+(e.message||e))}}
+async function removeCurrentProjectCalendar(){let p=getP();if(p)await removeProjectCalendarById(p.id)}
+
 function completeProject(){let p=getP();saveProjectFromForm(false);p.stage='Completed';renderTabs();scheduleSave();toast('Project completed')}
 async function copyText(s){try{await navigator.clipboard.writeText(s);toast('Copied')}catch{prompt('Copy:',s)}}
-function copyScheduleMessage(){let p=getP();saveProjectFromForm(false);copyText(`Beste ${p.customer.name||'klant'}, hierbij bevestig ik onze afspraak voor "${p.title||'het project'}" op ${fmtDate(p.schedule.start)}${p.schedule.time?' rond '+p.schedule.time:''}. Adres: ${p.customer.address||''}. Groet, Renoweet`)}
+function copyScheduleMessage(){let p=getP();saveProjectFromForm(false);copyText(`Beste ${p.customer.name||'klant'}, hierbij bevestig ik onze afspraak voor "${p.title||'het project'}" op ${fmtDate(p.schedule.start)}${p.schedule.time?' om '+p.schedule.time:''}${p.schedule.endTime?' tot '+p.schedule.endTime:''}. Adres: ${p.customer.address||''}. Groet, Renoweet`)}
 function sendToBookkeeping(){
  let p=getP();
  saveProjectFromForm(false);
