@@ -369,6 +369,10 @@ const serviceTemplates=[
 ];
 let db={projects:[],bookkeeping:[],deleted:[]}, workbook=null,fileHandle=null,saveTimer=null,isSaving=false,currentView='dashboard',currentProjectId=null,currentTab='intake';
 let googleAccessToken='', googleTokenClient=null, planWeekOffset=0;
+const LOCAL_CACHE_DB='renoweet-os-local-cache-v1';
+const LOCAL_CACHE_STORE='state';
+const LOCAL_CACHE_KEY='renoweet-db';
+let restoredLocalCache=false;
 const GOOGLE_CAL_SCOPE='https://www.googleapis.com/auth/calendar.events';
 const GOOGLE_CALENDAR_ID='primary';
 const GOOGLE_TIMEZONE='Europe/Amsterdam';
@@ -389,6 +393,28 @@ async function rememberedHandle(){try{let d=await openHandleDb(),tx=d.transactio
 async function verifyPermission(h,ask=false){if(!h)return false;let o={mode:'readwrite'};if(await h.queryPermission(o)==='granted')return true;if(ask&&await h.requestPermission(o)==='granted')return true;return false}
 function dbState(ok,msg,detail=''){ $('dbDot').className='dot '+(ok?'ok':'warn');$('dbStatus').textContent=msg;$('dbDetail').textContent=detail;$('saveNowBtn').disabled=!fileHandle }
 
+function openLocalCacheDb(){return new Promise((resolve,reject)=>{let r=indexedDB.open(LOCAL_CACHE_DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(LOCAL_CACHE_STORE))r.result.createObjectStore(LOCAL_CACHE_STORE)};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+async function cacheBrowserState(dirty=true){
+ try{
+  let d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readwrite');
+  tx.objectStore(LOCAL_CACHE_STORE).put({db:structuredClone(db),savedAt:new Date().toISOString(),dirty:!!dirty},LOCAL_CACHE_KEY);
+  await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
+ }catch(e){console.warn('Could not cache Renoweet data locally.',e)}
+}
+async function readBrowserCache(){
+ try{
+  let d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readonly'),r=tx.objectStore(LOCAL_CACHE_STORE).get(LOCAL_CACHE_KEY);
+  return await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)});
+ }catch(e){console.warn('Local Renoweet cache unavailable.',e);return null}
+}
+async function restoreBrowserCache(){
+ let c=await readBrowserCache();
+ if(!c?.db||!Array.isArray(c.db.projects))return false;
+ db=c.db;restoredLocalCache=true;
+ dbState(false,'Local copy restored',`Last cached ${c.savedAt?new Date(c.savedAt).toLocaleString('nl-NL'):''} • reconnect XLSX to save to OneDrive.`);
+ render();return true
+}
+
 async function connectWorkbook(){
  if(!('showOpenFilePicker' in window)){alert('Direct OneDrive XLSX saving needs Microsoft Edge or Google Chrome. On mobile, browser support varies; use desktop Edge/Chrome to connect the file.');return}
  try{
@@ -399,7 +425,7 @@ async function connectWorkbook(){
 async function loadWorkbook(h,ask){
  if(!(await verifyPermission(h,ask)))return false;
  let f=await h.getFile();workbook=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:false});
- fileHandle=h;parseWorkbook();const remembered=await rememberHandle(h);dbState(true,'Connected',f.name+(remembered?' • autosave on':' • connected for this session'));render();return true
+ fileHandle=h;parseWorkbook();restoredLocalCache=false;await cacheBrowserState(false);const remembered=await rememberHandle(h);dbState(true,'Connected',f.name+(remembered?' • autosave on':' • connected for this session'));render();return true
 }
 function rows(name){let ws=workbook?.Sheets?.[name];return ws?XLSX.utils.sheet_to_json(ws,{defval:'',raw:false}):[]}
 function parseWorkbook(){
@@ -492,13 +518,14 @@ function replaceDatabaseSheets(){
  workbook.SheetNames=[...names.filter(n=>workbook.Sheets[n]),...workbook.SheetNames.filter(n=>!names.includes(n)&&workbook.Sheets[n])];
 }
 function scheduleSave(){
- if(!fileHandle){dbState(false,'Not connected','Changes are only in this browser until you connect the XLSX.');return}
+ cacheBrowserState(true);
+ if(!fileHandle){dbState(false,'Saved locally','Changes are safe in this browser. Reconnect XLSX to write them to OneDrive.');return}
  dbState(true,'Unsaved changes','Autosaving…');clearTimeout(saveTimer);saveTimer=setTimeout(()=>saveWorkbook(false),700)
 }
 async function saveWorkbook(manual=true){
  if(isSaving)return;if(!fileHandle){if(manual)alert('Connect the Renoweet OS XLSX first.');return}
  if(!(await verifyPermission(fileHandle,manual))){dbState(false,'Permission needed','Click Connect XLSX.');return}
- try{isSaving=true;replaceDatabaseSheets();let bytes=XLSX.write(workbook,{bookType:'xlsx',type:'array'}),w=await fileHandle.createWritable();await w.write(bytes);await w.close();dbState(true,'Saved ✓','OneDrive will sync the database automatically.')}
+ try{isSaving=true;replaceDatabaseSheets();let bytes=XLSX.write(workbook,{bookType:'xlsx',type:'array'}),w=await fileHandle.createWritable();await w.write(bytes);await w.close();await cacheBrowserState(false);dbState(true,'Saved ✓','OneDrive will sync the database automatically.')}
  catch(e){console.error(e);dbState(false,'Save failed',e.message);if(manual)alert('Could not save: '+e.message)}
  finally{isSaving=false}
 }
@@ -1215,8 +1242,17 @@ $('connectBtn').onclick=connectWorkbook;$('saveNowBtn').onclick=()=>saveWorkbook
  // sessionStorage survives reloads in the same browser tab but avoids keeping a bearer token permanently.
  restoreGoogleTokenSession();
  render();dbState(false,'Not connected','Choose Renoweet_OS_Database.xlsx from your OneDrive folder.');
- if(!('showOpenFilePicker' in window)){dbState(false,'Browser limitation','Interface works here, but direct XLSX write needs supported Edge/Chrome file access.');return}
- try{let h=await rememberedHandle();if(h&&await verifyPermission(h,false))await loadWorkbook(h,false)}catch(e){console.warn(e)}
+ await restoreBrowserCache();
+ if(!('showOpenFilePicker' in window)){
+  if(restoredLocalCache)dbState(false,'Local copy restored','Your data is available on this device. Reconnect XLSX on a supported browser/device to write changes to OneDrive.');
+  else dbState(false,'Browser limitation','Interface works here, but direct XLSX write needs supported Edge/Chrome file access.');
+  return
+ }
+ try{
+  let h=await rememberedHandle();
+  if(h&&await verifyPermission(h,false))await loadWorkbook(h,false);
+  else if(restoredLocalCache)dbState(false,'Local copy restored','Your data survived the refresh. Click Connect XLSX when you want to save back to OneDrive.');
+ }catch(e){console.warn(e);if(restoredLocalCache)dbState(false,'Local copy restored','Your data survived the refresh. Click Connect XLSX when you want to save back to OneDrive.')}
 })();
 </script>
 </body>
