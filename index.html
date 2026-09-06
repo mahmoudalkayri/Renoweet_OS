@@ -221,7 +221,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   </div>
   <div class="statusbar">
    <span class="dot" id="dbDot"></span><b id="dbStatus">Not connected</b><span class="small" id="dbDetail">Choose your Renoweet OS XLSX from OneDrive.</span>
-   <span class="spacer"></span><button class="btn" id="connectBtn">Connect XLSX</button><button class="btn" id="saveNowBtn" disabled>Save now</button>
+   <span class="spacer"></span><button class="btn" id="connectBtn">Connect XLSX</button><button class="btn" id="resetXlsxBtn" title="Clear only this device's saved XLSX connection; local Renoweet data is kept">Reset connection</button><button class="btn" id="saveNowBtn" disabled>Save now</button>
   </div>
   <div id="viewRoot"></div>
  </main>
@@ -391,6 +391,16 @@ function stagePill(s){let c=s==='Completed'?'green':s==='In progress'?'blue':s==
 function openHandleDb(){return new Promise((resolve,reject)=>{let r=indexedDB.open(HANDLE_DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(HANDLE_STORE);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 async function rememberHandle(h){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readwrite');tx.objectStore(HANDLE_STORE).put(h,HANDLE_KEY);await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true}catch(e){console.warn("Browser cannot remember this file handle; using it for this session only.",e);return false}}
 async function rememberedHandle(){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readonly'),r=tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);return await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}catch(e){console.warn("Saved file handle is unavailable in this browser.",e);return null}}
+async function forgetRememberedHandle(){
+ try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readwrite');tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true}catch(e){console.warn('Could not clear saved XLSX handle.',e);return false}
+}
+async function resetXlsxConnection(){
+ const ok=confirm('Reset the XLSX connection on THIS device?\n\nYour Renoweet projects and any unsynced local changes will stay in this browser. Only the saved file handle/permission link is cleared.');
+ if(!ok)return;
+ clearTimeout(saveTimer);fileHandle=null;await forgetRememberedHandle();await cacheBrowserState(localCacheDirty);
+ dbState(false,localCacheDirty?'Unsynced local changes':'XLSX disconnected',localCacheDirty?'Your local changes are safe. Tap Connect XLSX and select the current OneDrive file to merge safely.':'Local data is kept. Tap Connect XLSX and select the current OneDrive file.');
+ render();toast('XLSX connection reset');
+}
 async function verifyPermission(h,ask=false){if(!h)return false;let o={mode:'readwrite'};if(await h.queryPermission(o)==='granted')return true;if(ask&&await h.requestPermission(o)==='granted')return true;return false}
 function dbState(ok,msg,detail=''){ $('dbDot').className='dot '+(ok?'ok':'warn');$('dbStatus').textContent=msg;$('dbDetail').textContent=detail;$('saveNowBtn').disabled=!fileHandle }
 
@@ -555,80 +565,138 @@ async function connectWorkbook(){
   await loadWorkbook(h,true);
  }catch(e){if(e.name!=='AbortError')alert(e.message)}
 }
-async function waitForStableFile(h,{samples=3,interval=900,maxWait=12000}={}){
- const started=Date.now();let last=null,stable=0,current=null;
+function canonicalizeForSignature(v){
+ if(Array.isArray(v))return v.map(canonicalizeForSignature);
+ if(v&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonicalizeForSignature(v[k])]));
+ return v??null;
+}
+async function sha256Text(text){
+ const data=new TextEncoder().encode(text),digest=await crypto.subtle.digest('SHA-256',data);
+ return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+}
+function looksLikeZipBytes(bytes){
+ if(!bytes||bytes.byteLength<4)return false;
+ const b=new Uint8Array(bytes,0,Math.min(4,bytes.byteLength));
+ return b[0]===0x50&&b[1]===0x4b&&((b[2]===0x03&&b[3]===0x04)||(b[2]===0x05&&b[3]===0x06)||(b[2]===0x07&&b[3]===0x08));
+}
+function isXlsxReadTransientError(e){
+ const m=String(e?.message||e||'').toLowerCase();
+ return m.includes('unsupported zip')||m.includes('zip')||m.includes('central directory')||m.includes('unexpected end')||m.includes('invalid')||m.includes('corrupt');
+}
+async function logicalFileSnapshotOnce(h){
+ const file=await h.getFile();
+ const bytes=await file.arrayBuffer();
+ if(bytes.byteLength<100||!looksLikeZipBytes(bytes)){
+  const e=new Error('The selected XLSX is not fully available from OneDrive yet.');e.name='XlsxNotReadyError';throw e;
+ }
+ let wb;
+ try{wb=XLSX.read(bytes,{type:'array',cellDates:false})}
+ catch(e){
+  if(isXlsxReadTransientError(e)){const x=new Error('The selected XLSX is still being prepared by OneDrive.');x.name='XlsxNotReadyError';x.cause=e;throw x}
+  throw e;
+ }
+ const parsed=databaseFromWorkbook(wb);
+ const signature=await sha256Text(JSON.stringify(canonicalizeForSignature(parsed)));
+ return {file,workbook:wb,db:parsed,signature};
+}
+async function logicalFileSnapshot(h,{retries=4,delay=550}={}){
+ let lastError=null;
+ for(let i=1;i<=retries;i++){
+  try{return await logicalFileSnapshotOnce(h)}
+  catch(e){
+   lastError=e;
+   if(e?.name!=='XlsxNotReadyError'||i===retries)break;
+   await new Promise(r=>setTimeout(r,delay*i));
+  }
+ }
+ if(lastError?.name==='XlsxNotReadyError'){
+  const e=new Error('OneDrive has not finished making this XLSX available yet. Your local Renoweet changes are still safe. Wait a moment, then reconnect the current XLSX.');e.name='XlsxNotReadyError';throw e;
+ }
+ throw lastError;
+}
+async function waitForLogicalStableFile(h,{samples=2,interval=650,maxWait=7000}={}){
+ const started=Date.now();let last='',stable=0,snap=null;
  while(Date.now()-started<maxWait){
-  current=await h.getFile();
-  const sig=`${current.size}|${current.lastModified}`;
-  if(sig===last)stable++;else{last=sig;stable=1}
-  if(stable>=samples)return current;
+  snap=await logicalFileSnapshot(h);
+  if(snap.signature===last)stable++;else{last=snap.signature;stable=1}
+  if(stable>=samples)return snap;
   await new Promise(r=>setTimeout(r,interval));
  }
- const e=new Error('OneDrive is still syncing this XLSX.');e.name='OneDriveBusyError';throw e;
+ const e=new Error('The XLSX contents are still changing.');e.name='OneDriveBusyError';throw e;
 }
 async function loadWorkbook(h,ask){
  if(!(await verifyPermission(h,ask)))return false;
- let f=await h.getFile();
- const incomingWorkbook=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:false});
+ let initial;
+ try{initial=await logicalFileSnapshot(h)}catch(e){
+  if(isStaleFileError(e)){await forgetRememberedHandle();fileHandle=null;dbState(false,'Reconnect XLSX','This device has a stale OneDrive file handle. Tap Connect XLSX and choose the current file again.');return false}
+  if(e?.name==='XlsxNotReadyError'){
+   localCacheDirty=!!localCacheDirty;await cacheBrowserState(localCacheDirty);
+   dbState(false,'XLSX not ready','OneDrive did not provide a complete XLSX. Your local Renoweet data was not overwritten. Wait a moment and reconnect the current file.');
+   alert('OneDrive has not finished making this XLSX available yet.\n\nYour local Renoweet changes are still safe and nothing was overwritten. Wait a few seconds, then tap Connect XLSX and choose the current file again.');
+   return false;
+  }
+  throw e
+ }
+ const f=initial.file,incomingWorkbook=initial.workbook;
 
- // Multi-device recovery: merge this device's unsynced cache with the CURRENT XLSX instead of replacing either copy.
+ // Multi-device recovery: local unsynced work is merged with the CURRENT logical XLSX contents.
  if(restoredLocalCache&&localCacheDirty){
-  const ok=confirm('Unsynced Renoweet changes were found on this device.\n\nRenoweet will MERGE them with the current XLSX. Projects and operational records that exist on either side are kept; matching IDs are updated instead of duplicated. Deletions are respected when they can be verified from the last synced copy.\n\nContinue with multi-device safe merge?');
+  const ok=confirm('Unsynced Renoweet changes were found on this device.\n\nRenoweet will MERGE them with the current XLSX. Matching record IDs are updated instead of duplicated. If the same field changed on both devices, the newer field timestamp wins.\n\nContinue with safe merge?');
   if(!ok){dbState(false,'Local changes kept','Nothing was overwritten. Your unsynced changes are still safe in this browser.');return false}
 
-  // Keep the exact local snapshot throughout reconnect. OneDrive can update the file
-  // while it is being opened; if that happens, re-read the newest file and merge again
-  // instead of treating the newly selected handle as stale forever.
-  const localSnapshot=cloneSafe(db), remembered=await rememberHandle(h);
-  fileHandle=h;
-  let lastResult=null,lastError=null;
-  dbState(true,'Merging device + XLSX…',f.name+(remembered?' • file remembered':' • connected for this session'));
+  const localSnapshot=cloneSafe(db),remembered=await rememberHandle(h);
+  fileHandle=h;let lastResult=null,lastError=null;
+  dbState(true,'Comparing XLSX contents…',f.name+(remembered?' • file remembered':' • connected for this session'));
 
-  for(let attempt=1;attempt<=4;attempt++){
+  for(let attempt=1;attempt<=3;attempt++){
    try{
-    if(attempt>1)await new Promise(r=>setTimeout(r,900*attempt));
-    dbState(true,'Waiting for OneDrive…',`Checking that the selected XLSX is stable before merge (${attempt}/4)`);
-    const freshFile=await waitForStableFile(h,{samples:3,interval:800,maxWait:9000});
-    const freshWorkbook=XLSX.read(await freshFile.arrayBuffer(),{type:'array',cellDates:false});
-    const remoteDb=databaseFromWorkbook(freshWorkbook);
-    lastResult=mergeDatabases(lastSyncedDb,localSnapshot,remoteDb);
-    db=lastResult.merged;workbook=freshWorkbook;resetProjectShadows();
-    replaceDatabaseSheets();
+    if(attempt>1)await new Promise(r=>setTimeout(r,500*attempt));
+    dbState(true,'Reading newest XLSX…',`Content-safe merge attempt ${attempt}/3`);
+    const fresh=await waitForLogicalStableFile(h,{samples:2,interval:500,maxWait:4500});
+    lastResult=mergeDatabases(lastSyncedDb,localSnapshot,fresh.db);
+    db=lastResult.merged;workbook=fresh.workbook;resetProjectShadows();replaceDatabaseSheets();
     const bytes=XLSX.write(workbook,{bookType:'xlsx',type:'array'});
-    const beforeWrite=await waitForStableFile(h,{samples:2,interval:500,maxWait:5000});
-    if(beforeWrite.size!==freshFile.size||beforeWrite.lastModified!==freshFile.lastModified){
-      const e=new Error('OneDrive changed the XLSX after it was read.');e.name='OneDriveBusyError';throw e;
-    }
-    const w=await h.createWritable({keepExistingData:false});
-    await w.write(bytes);
-    await w.close();
 
-    localCacheDirty=false;restoredLocalCache=false;staleFileAlerted=false;
-    await cacheBrowserState(false);
+    // Compare actual database contents again. Ignore OneDrive metadata/lastModified churn.
+    const beforeWrite=await logicalFileSnapshot(h);
+    if(beforeWrite.signature!==fresh.signature){
+     const e=new Error('The XLSX database contents changed after Renoweet read them.');e.name='OneDriveBusyError';throw e;
+    }
+
+    const w=await h.createWritable({keepExistingData:false});
+    await w.write(bytes);await w.close();
+    localCacheDirty=false;restoredLocalCache=false;staleFileAlerted=false;await cacheBrowserState(false);
     const st=lastResult.stats,detail=`Merged safely • ${st.added} added/kept • ${st.deleted} verified deletion(s) • ${st.conflicts} conflict(s) resolved`;
     dbState(true,'Merged + saved ✓',detail);render();toast('Multi-device merge saved');
-    if(st.conflicts)alert(`Renoweet merged this device with the current XLSX and saved the result.\n\n${st.conflicts} overlapping change(s) were found. For the same field changed on both devices, Renoweet kept the value with the newest field timestamp (falling back to the project Updated timestamp for older records). Records with different IDs were kept from both devices.\n\nNo whole database snapshot was blindly overwritten.`);
+    if(st.conflicts)alert(`Renoweet merged this device with the current XLSX and saved the result.\n\n${st.conflicts} overlapping change(s) were found. If the same field was changed on both devices, the newest field timestamp was kept. Different-field changes were merged.\n\nOneDrive metadata changes were ignored when the actual XLSX database contents were unchanged.`);
     return true;
    }catch(e){
-    lastError=e;console.warn('Reconnect merge attempt '+attempt+' failed',e);
-    if(!isStaleFileError(e)&&e.name!=='OneDriveBusyError')break;
-    db=localSnapshot;workbook=incomingWorkbook;
-    dbState(false,'OneDrive is syncing',`Renoweet is waiting for the XLSX to become stable, then it will retry safely… (${attempt}/4)`);
+    lastError=e;console.warn('Content-safe reconnect attempt '+attempt+' failed',e);
+    db=localSnapshot;localCacheDirty=true;restoredLocalCache=true;await cacheBrowserState(true);
+    if(isStaleFileError(e)){
+     fileHandle=null;await forgetRememberedHandle();
+     dbState(false,'XLSX connection is stale','Your local changes are safe. Reset/reconnect this device to the current OneDrive XLSX.');
+     alert("This device's OneDrive file handle became stale while saving.\n\nNothing was overwritten and your local changes are still safe. Tap Connect XLSX and select the current OneDrive file again. If this device keeps reusing a bad handle, use Reset connection first.");
+     return false;
+    }
+    if(e?.name==='XlsxNotReadyError'){
+     dbState(false,'XLSX not ready',`OneDrive returned an incomplete XLSX. Your local changes are safe. Retrying… (${attempt}/3)`);
+     continue;
+    }
+    if(e.name!=='OneDriveBusyError')break;
+    dbState(false,'XLSX contents changed',`Another real database-content change was detected. Renoweet will retry safely… (${attempt}/3)`);
    }
   }
 
-  // Never overwrite the cache on failure. Keep the original local edits for another reconnect.
-  db=localSnapshot;localCacheDirty=true;restoredLocalCache=true;fileHandle=null;
-  await cacheBrowserState(true);
-  dbState(false,'OneDrive still busy','Your local changes are safe. OneDrive did not keep the selected XLSX stable long enough to perform a safe merge.');
-  alert('Renoweet did not overwrite anything. Your local changes are still safe.\n\nOneDrive kept changing the selected XLSX while Renoweet was reading it. Let OneDrive finish syncing, then tap Connect XLSX and select the current file once more. Renoweet will wait for a stable copy before merging.'+(lastError&&!isStaleFileError(lastError)&&lastError?.name!=='OneDriveBusyError'?'\n\nDetails: '+lastError.message:''));
+  db=localSnapshot;localCacheDirty=true;restoredLocalCache=true;fileHandle=null;await cacheBrowserState(true);
+  dbState(false,'Reconnect required','Your local changes are safe. Renoweet could not get a writable current XLSX on this device.');
+  alert('Renoweet did not overwrite anything. Your local changes are still safe.\n\nThis device could not get a complete writable OneDrive XLSX. Wait a few seconds, then tap Connect XLSX and choose the current file again.'+(lastError&&!isStaleFileError(lastError)&&lastError?.name!=='OneDriveBusyError'&&lastError?.name!=='XlsxNotReadyError'?'\n\nDetails: '+lastError.message:''));
   return false;
  }
 
- workbook=incomingWorkbook;fileHandle=h;parseWorkbook();resetProjectShadows();restoredLocalCache=false;localCacheDirty=false;
- await cacheBrowserState(false);
- const remembered=await rememberHandle(h);
- staleFileAlerted=false;dbState(true,'Connected',f.name+(remembered?' • autosave on':' • connected for this session'));render();return true
+ workbook=incomingWorkbook;fileHandle=h;db=initial.db;resetProjectShadows();restoredLocalCache=false;localCacheDirty=false;
+ await cacheBrowserState(false);const remembered=await rememberHandle(h);staleFileAlerted=false;
+ dbState(true,'Connected',f.name+(remembered?' • autosave on':' • connected for this session'));render();return true
 }
 function rows(name){let ws=workbook?.Sheets?.[name];return ws?XLSX.utils.sheet_to_json(ws,{defval:'',raw:false}):[]}
 function parseWorkbook(){
@@ -734,9 +802,9 @@ async function saveWorkbook(manual=true){
  catch(e){
   console.error(e);
   if(isStaleFileError(e)){
-   localCacheDirty=true;await cacheBrowserState(true);fileHandle=null;
-   dbState(false,'Newer XLSX detected','The OneDrive file changed on another device. Your local changes are safe. Click Connect XLSX to merge with the newest file; newer values win when the same field conflicts.');
-   if(manual||!staleFileAlerted){alert('Renoweet detected that the XLSX changed on another device.\n\nYour local changes have NOT been overwritten. Click Connect XLSX, choose the current OneDrive file, and Renoweet will merge both versions. If the same field was changed on both devices, the value with the newer field timestamp is kept.');staleFileAlerted=true}
+   localCacheDirty=true;await cacheBrowserState(true);fileHandle=null;await forgetRememberedHandle();
+   dbState(false,'XLSX connection changed',"Your local changes are safe. This device's OneDrive handle was cleared; reconnect the current XLSX to merge safely.");
+   if(manual||!staleFileAlerted){alert("OneDrive replaced or refreshed this device's file handle.\n\nYour local changes have NOT been overwritten. Renoweet cleared only the stale connection. Tap Connect XLSX and choose the current OneDrive file; it will compare actual XLSX contents and merge newer field values safely.");staleFileAlerted=true}
   }else{dbState(false,'Save failed',e.message);if(manual)alert('Could not save: '+e.message)}
  }
  finally{isSaving=false}
@@ -793,7 +861,7 @@ function scheduleHTML(){
  const rows=ps.map(p=>`<div class="plan-list-row"><div class="plan-date">${fmtDate(p.schedule.start)}<small>${esc(scheduleTimeLabel(p))}</small></div><div><b>${esc(p.title||'Untitled')}</b><div class="small">${esc(p.customer.name||'')} ${p.customer.address?'• '+esc(p.customer.address):''}</div><div class="plan-sync ${p.schedule.calendarEventId?'synced':'local'}">${p.schedule.calendarEventId?'Google Calendar linked':'Renoweet OS only'}</div></div><div class="actions"><button class="btn" onclick="openProject('${p.id}','schedule')">Open</button><button class="btn primary" onclick="syncProjectCalendarById('${p.id}')">${p.schedule.calendarEventId?'Update calendar':'Add to calendar'}</button>${p.schedule.calendarEventId?`<button class="btn danger" onclick="removeProjectCalendarById('${p.id}')">Remove calendar</button>`:''}</div></div>`).join('');
  return `${setup}<div class="plan-toolbar"><div class="plan-status ${connected?'ok':''}">${connected?'● Google Calendar connected':'○ Google Calendar not connected'}</div><button class="btn" onclick="connectGoogleCalendar()">${connected?'Reconnect Google':'Connect Google Calendar'}</button><button class="btn primary" onclick="syncAllScheduledJobs()">Sync all jobs</button><span class="spacer"></span><button class="btn" onclick="shiftPlanWeek(-7)">← Previous</button><button class="btn" onclick="planWeekOffset=0;render()">This week</button><button class="btn" onclick="shiftPlanWeek(7)">Next →</button></div><div class="plan-grid">${week}</div>${ps.length?`<div class="section-title"><h2>Scheduled jobs</h2><span class="small">Renoweet OS → Google Calendar</span></div><div class="plan-list">${rows}</div>`:'<div class="card empty" style="margin-top:14px">No scheduled jobs yet. Open a project and use its Schedule tab.</div>'}`;
 }
-function backupHTML(){return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))"><div class="card"><h3>OneDrive XLSX database</h3><p class="small">Use the included <b>Renoweet_OS_Database.xlsx</b>. Put it in your local OneDrive folder, then connect it here in Edge or Chrome.</p><button class="btn primary" onclick="connectWorkbook()">Connect XLSX</button></div><div class="card"><h3>Save behavior</h3><p class="small">Project changes autosave to the local XLSX. OneDrive then syncs the file. If another device has unsynced edits, Renoweet merges matching record IDs on reconnect instead of replacing the whole database. Invoices sent from Renoweet OS are stored in a dedicated Bookkeeping sheet inside this OS database. Your formatted bookkeeping master workbook remains separate, so its formatting and charts are not exposed to browser rewriting.</p><button class="btn" onclick="saveWorkbook(true)">Save now</button></div><div class="card"><h3>Timestamped backup</h3><p class="small">Create a full XLSX backup copy before major changes. The connected OneDrive database stays untouched.</p><button class="btn primary" onclick="createTimestampedBackup()">Create backup copy</button></div><div class="card"><h3>PIN security</h3><p class="small">Renoweet OS locks when a new browser session starts. The PIN is stored on this device as a salted cryptographic hash, not as plain text.</p><div class="actions"><button class="btn" onclick="lockRenoweet()">Lock now</button><button class="btn" onclick="changePin()">Change PIN</button></div></div><div class="card"><h3>Mobile use</h3><p class="small">The interface itself is mobile friendly. Direct local XLSX writing is most reliable on desktop Edge/Chrome. On phones, file-system access support depends on the browser/device.</p></div></div>`}
+function backupHTML(){return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))"><div class="card"><h3>OneDrive XLSX database</h3><p class="small">Use the included <b>Renoweet_OS_Database.xlsx</b>. Put it in your local OneDrive folder, then connect it here in Edge or Chrome.</p><div class="actions"><button class="btn primary" onclick="connectWorkbook()">Connect XLSX</button><button class="btn" onclick="resetXlsxConnection()">Reset connection</button></div><p class="small" style="margin-top:8px">Reset clears only this device's saved file handle. Cached Renoweet data and unsynced changes are kept.</p></div><div class="card"><h3>Save behavior</h3><p class="small">Project changes autosave to the local XLSX. OneDrive then syncs the file. If another device has unsynced edits, Renoweet merges matching record IDs on reconnect instead of replacing the whole database. Invoices sent from Renoweet OS are stored in a dedicated Bookkeeping sheet inside this OS database. Your formatted bookkeeping master workbook remains separate, so its formatting and charts are not exposed to browser rewriting.</p><button class="btn" onclick="saveWorkbook(true)">Save now</button></div><div class="card"><h3>Timestamped backup</h3><p class="small">Create a full XLSX backup copy before major changes. The connected OneDrive database stays untouched.</p><button class="btn primary" onclick="createTimestampedBackup()">Create backup copy</button></div><div class="card"><h3>PIN security</h3><p class="small">Renoweet OS locks when a new browser session starts. The PIN is stored on this device as a salted cryptographic hash, not as plain text.</p><div class="actions"><button class="btn" onclick="lockRenoweet()">Lock now</button><button class="btn" onclick="changePin()">Change PIN</button></div></div><div class="card"><h3>Mobile use</h3><p class="small">The interface itself is mobile friendly. Direct local XLSX writing is most reliable on desktop Edge/Chrome. On phones, file-system access support depends on the browser/device.</p></div></div>`}
 function render(){let root=$('viewRoot');if(currentView==='dashboard')root.innerHTML=dashboardHTML();if(currentView==='projects')root.innerHTML=projectsHTML();if(currentView==='pipeline')root.innerHTML=pipelineHTML();if(currentView==='customers')root.innerHTML=customersHTML();if(currentView==='schedule')root.innerHTML=scheduleHTML();if(currentView==='backup')root.innerHTML=backupHTML();if(currentView==='projects'){let f=$('projectFilter');f.oninput=()=>{$('projectList').innerHTML=projectRowsHTML(db.projects.filter(p=>JSON.stringify(p).toLowerCase().includes(f.value.toLowerCase())))}}}
 
 function getP(){return db.projects.find(p=>p.id===currentProjectId)}
@@ -1447,7 +1515,7 @@ $('saveProjectBtn').onclick=()=>{saveProjectFromForm(true);closeProject()}
 $('closeModalBtn').onclick=closeProject;
 $('quickSearchBtn').onclick=()=>{$('searchModal').classList.add('open');$('globalSearch').value='';$('globalSearch').focus();renderSearch('')}
 $('globalSearch').oninput=e=>renderSearch(e.target.value);
-$('connectBtn').onclick=connectWorkbook;$('saveNowBtn').onclick=()=>saveWorkbook(true);
+$('connectBtn').onclick=connectWorkbook;$('resetXlsxBtn').onclick=resetXlsxConnection;$('saveNowBtn').onclick=()=>saveWorkbook(true);
 
 (async()=>{
  // Restore the still-valid Google Calendar access token after a page refresh.
