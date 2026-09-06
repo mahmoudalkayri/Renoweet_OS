@@ -221,7 +221,7 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   </div>
   <div class="statusbar">
    <span class="dot" id="dbDot"></span><b id="dbStatus">Not connected</b><span class="small" id="dbDetail">Choose your Renoweet OS XLSX from OneDrive.</span>
-   <span class="spacer"></span><button class="btn" id="connectBtn">Connect XLSX</button><button class="btn" id="resetXlsxBtn" title="Clear only this device's saved XLSX connection; local Renoweet data is kept">Reset connection</button><button class="btn" id="saveNowBtn" disabled>Save now</button>
+   <span class="spacer"></span><button class="btn" id="connectBtn">Connect XLSX</button><button class="btn" id="resetXlsxBtn" title="Clear only this device's saved XLSX connection; local Renoweet data is kept">Reset connection</button><button class="btn danger" id="eraseLocalCacheBtn" title="Delete this device's local Renoweet cache and unsynced changes. Your OneDrive XLSX is not changed.">Erase local cache</button><button class="btn" id="saveNowBtn" disabled>Save now</button>
   </div>
   <div id="viewRoot"></div>
  </main>
@@ -400,6 +400,39 @@ async function resetXlsxConnection(){
  clearTimeout(saveTimer);fileHandle=null;await forgetRememberedHandle();await cacheBrowserState(localCacheDirty);
  dbState(false,localCacheDirty?'Unsynced local changes':'XLSX disconnected',localCacheDirty?'Your local changes are safe. Tap Connect XLSX and select the current OneDrive file to merge safely.':'Local data is kept. Tap Connect XLSX and select the current OneDrive file.');
  render();toast('XLSX connection reset');
+}
+async function eraseLocalCache(){
+ const first=confirm('ERASE LOCAL CACHE on THIS device?\n\nThis permanently deletes any unsynced Renoweet changes stored only in this browser. Your OneDrive XLSX file will NOT be changed.');
+ if(!first)return;
+ const second=confirm("Final confirmation: discard this device's local/unsynced changes and start fresh from the current XLSX?");
+ if(!second)return;
+ try{
+  clearTimeout(saveTimer);
+  saveTimer=null;
+  isSaving=false;
+  fileHandle=null;
+  workbook=null;
+  await forgetRememberedHandle();
+  try{
+   const d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readwrite');
+   tx.objectStore(LOCAL_CACHE_STORE).delete(LOCAL_CACHE_KEY);
+   await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
+  }catch(e){console.warn('Could not delete local Renoweet cache.',e)}
+  db={projects:[],bookkeeping:[],deleted:[]};
+  restoredLocalCache=false;
+  localCacheDirty=false;
+  lastSyncedDb=null;
+  projectShadows=new Map();
+  staleFileAlerted=false;
+  currentProjectId=null;
+  const modal=$('projectModal');if(modal)modal.classList.remove('open');
+  dbState(false,'Local cache erased','This device is clean. Tap Connect XLSX and choose the CURRENT OneDrive database to load the latest data.');
+  render();
+  toast('Local cache erased');
+ }catch(e){
+  console.error(e);
+  alert('Could not erase the local cache: '+(e?.message||e));
+ }
 }
 async function verifyPermission(h,ask=false){if(!h)return false;let o={mode:'readwrite'};if(await h.queryPermission(o)==='granted')return true;if(ask&&await h.requestPermission(o)==='granted')return true;return false}
 function dbState(ok,msg,detail=''){ $('dbDot').className='dot '+(ok?'ok':'warn');$('dbStatus').textContent=msg;$('dbDetail').textContent=detail;$('saveNowBtn').disabled=!fileHandle }
@@ -1515,7 +1548,7 @@ $('saveProjectBtn').onclick=()=>{saveProjectFromForm(true);closeProject()}
 $('closeModalBtn').onclick=closeProject;
 $('quickSearchBtn').onclick=()=>{$('searchModal').classList.add('open');$('globalSearch').value='';$('globalSearch').focus();renderSearch('')}
 $('globalSearch').oninput=e=>renderSearch(e.target.value);
-$('connectBtn').onclick=connectWorkbook;$('resetXlsxBtn').onclick=resetXlsxConnection;$('saveNowBtn').onclick=()=>saveWorkbook(true);
+$('connectBtn').onclick=connectWorkbook;$('resetXlsxBtn').onclick=resetXlsxConnection;$('eraseLocalCacheBtn').onclick=eraseLocalCache;$('saveNowBtn').onclick=()=>saveWorkbook(true);
 
 (async()=>{
  // Restore the still-valid Google Calendar access token after a page refresh.
