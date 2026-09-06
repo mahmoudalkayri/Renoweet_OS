@@ -983,7 +983,24 @@ The project will disappear from Renoweet OS project lists, dashboard totals and 
 
 
 const GOOGLE_CLIENT_ID='1048920224836-lhde9a6dnm157935n9sp13q4o8an891q.apps.googleusercontent.com';
+const GOOGLE_TOKEN_SESSION_KEY='renoweetGoogleCalendarToken';
 function getGoogleClientId(){return GOOGLE_CLIENT_ID}
+function saveGoogleTokenSession(token,expiresIn){
+ try{
+   const ttl=Math.max(0,(Number(expiresIn)||3600)*1000);
+   sessionStorage.setItem(GOOGLE_TOKEN_SESSION_KEY,JSON.stringify({token:String(token||''),expiresAt:Date.now()+ttl}));
+ }catch(e){console.warn('Could not persist Google session token',e)}
+}
+function restoreGoogleTokenSession(){
+ try{
+   const raw=sessionStorage.getItem(GOOGLE_TOKEN_SESSION_KEY);if(!raw)return false;
+   const x=JSON.parse(raw);
+   // Leave a safety margin so we do not start an API call with a token about to expire.
+   if(!x?.token||!x?.expiresAt||Date.now()>=Number(x.expiresAt)-60000){sessionStorage.removeItem(GOOGLE_TOKEN_SESSION_KEY);return false}
+   googleAccessToken=String(x.token);return true;
+ }catch(e){try{sessionStorage.removeItem(GOOGLE_TOKEN_SESSION_KEY)}catch(_){}return false}
+}
+function clearGoogleTokenSession(){googleAccessToken='';try{sessionStorage.removeItem(GOOGLE_TOKEN_SESSION_KEY)}catch(e){}}
 function saveGoogleClientId(){let el=$('googleClientIdInput');if(!el)return;let v=el.value.trim();if(!v||!v.endsWith('.apps.googleusercontent.com')){alert('Enter a valid Google OAuth Web Client ID ending in .apps.googleusercontent.com');return}localStorage.setItem('renoweetGoogleClientId',v);googleTokenClient=null;toast('Google Client ID saved');render()}
 function ensureGoogleTokenClient(){
  const clientId=getGoogleClientId();
@@ -1016,6 +1033,7 @@ function requestGoogleToken(forceConsent=false){
      }
      googleAccessToken=(resp&&resp.access_token)||'';
      if(!googleAccessToken)return reject(new Error('Google did not return an access token.'));
+     saveGoogleTokenSession(googleAccessToken,resp?.expires_in);
      render();resolve(googleAccessToken)
    };
    // Avoid forcing the consent screen every time. Google will show consent when required.
@@ -1024,7 +1042,7 @@ function requestGoogleToken(forceConsent=false){
 }
 async function connectGoogleCalendar(){
  try{
-   googleAccessToken='';
+   clearGoogleTokenSession();
    await requestGoogleToken(false);
    toast('Google Calendar connected');render();
  }catch(e){
@@ -1068,7 +1086,7 @@ function updateInviteStateFromEvent(p,ev){
 async function calendarFetch(path,options={}){
  const token=await requestGoogleToken();
  const res=await fetch('https://www.googleapis.com/calendar/v3'+path,{...options,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(options.headers||{})}});
- if(res.status===401){googleAccessToken='';throw new Error('Google authorization expired. Connect Google Calendar again.')}
+ if(res.status===401){clearGoogleTokenSession();throw new Error('Google authorization expired. Connect Google Calendar again.')}
  if(res.status===204)return null;
  const body=await res.json().catch(()=>({}));if(!res.ok)throw new Error(body?.error?.message||`Google Calendar error ${res.status}`);return body;
 }
@@ -1193,6 +1211,9 @@ $('globalSearch').oninput=e=>renderSearch(e.target.value);
 $('connectBtn').onclick=connectWorkbook;$('saveNowBtn').onclick=()=>saveWorkbook(true);
 
 (async()=>{
+ // Restore the still-valid Google Calendar access token after a page refresh.
+ // sessionStorage survives reloads in the same browser tab but avoids keeping a bearer token permanently.
+ restoreGoogleTokenSession();
  render();dbState(false,'Not connected','Choose Renoweet_OS_Database.xlsx from your OneDrive folder.');
  if(!('showOpenFilePicker' in window)){dbState(false,'Browser limitation','Interface works here, but direct XLSX write needs supported Edge/Chrome file access.');return}
  try{let h=await rememberedHandle();if(h&&await verifyPermission(h,false))await loadWorkbook(h,false)}catch(e){console.warn(e)}
