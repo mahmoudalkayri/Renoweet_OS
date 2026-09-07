@@ -368,12 +368,18 @@ const serviceTemplates=[
  {keys:['installation','installatie','technical','technische'],desc:'Technische installatie / montage',unit:'uur',price:62.5}
 ];
 let db={projects:[],bookkeeping:[],deleted:[]}, workbook=null,fileHandle=null,saveTimer=null,isSaving=false,currentView='dashboard',currentProjectId=null,currentTab='intake';
+let draftProject=null,pendingPhotoFiles=[],photosFolderHandle=null;
 let googleAccessToken='', googleTokenClient=null, planWeekOffset=0;
 const LOCAL_CACHE_DB='renoweet-os-local-cache-v1';
 const LOCAL_CACHE_STORE='state';
 const LOCAL_CACHE_KEY='renoweet-db';
+const ACTIVE_DB_NAME_KEY='renoweetActiveDatabaseName';
+let activeDbName=(localStorage.getItem(ACTIVE_DB_NAME_KEY)||'').trim();
 let restoredLocalCache=false, localCacheDirty=false, lastSyncedDb=null;
 let projectShadows=new Map(), staleFileAlerted=false;
+let formDirty=false, backupFolderHandle=null, lastDbStatus={ok:false,msg:'Not connected',detail:''};
+const AUTO_BACKUP_FOLDER_NAME='Renoweet OS Backups';
+const BACKUP_HANDLE_KEY='renoweetOSBackupFolder';
 const GOOGLE_CAL_SCOPE='https://www.googleapis.com/auth/calendar.events';
 const GOOGLE_CALENDAR_ID='primary';
 const GOOGLE_TIMEZONE='Europe/Amsterdam';
@@ -381,7 +387,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const money=v=>CURRENCY.format(Number(v)||0),today=()=>new Date().toISOString().slice(0,10),nowStamp=()=>new Date().toISOString();
 const fmtDate=s=>{if(!s)return '';try{let d=String(s).includes('T')?new Date(s):new Date(s+'T12:00:00');return isNaN(d)?s:d.toLocaleDateString('nl-NL')}catch{return s}};
-function uid(){return 'P'+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase()}
+function uid(){const d=new Date(),ts=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getMilliseconds()).padStart(3,'0');const r=(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,8):Math.random().toString(36).slice(2,10)).toUpperCase();return `P${ts}-${r}`}
 function lineid(){return Math.random().toString(36).slice(2,10).toUpperCase()}
 function toast(msg='Saved'){let t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1500)}
 function blankProject(){return {id:uid(),created:today(),updated:nowStamp(),stage:'Lead',customer:{name:'',phone:'',email:'',address:''},title:'',description:'',scope:'',notes:'',estimate:[{id:lineid(),desc:'Arbeid',qty:1,unit:'uur',rate:62.5}],materials:[],documents:[],payments:[],purchaseOrders:[],activity:[],followUps:[],acceptance:{status:'Pending',date:'',notes:''},schedule:{start:'',end:'',time:'',notes:'',shareClient:false,inviteEmail:'',inviteStatus:'',calendarSharedWith:'',calendarShareSignature:''},quote:{number:'',date:today(),validDays:14,vat:21,status:'Draft'},invoice:{number:'',date:today(),dueDays:14,status:'Draft'},checklist:defaultChecklist.map((x,i)=>({order:i+1,text:x,done:false}))}}
@@ -391,21 +397,45 @@ function stagePill(s){let c=s==='Completed'?'green':s==='In progress'?'blue':s==
 function openHandleDb(){return new Promise((resolve,reject)=>{let r=indexedDB.open(HANDLE_DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(HANDLE_STORE);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 async function rememberHandle(h){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readwrite');tx.objectStore(HANDLE_STORE).put(h,HANDLE_KEY);await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true}catch(e){console.warn("Browser cannot remember this file handle; using it for this session only.",e);return false}}
 async function rememberedHandle(){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readonly'),r=tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);return await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}catch(e){console.warn("Saved file handle is unavailable in this browser.",e);return null}}
+const PHOTOS_HANDLE_KEY='renoweetOSProjectsPhotosFolder';
+async function rememberPhotosFolder(h){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readwrite');tx.objectStore(HANDLE_STORE).put(h,PHOTOS_HANDLE_KEY);await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true}catch(e){console.warn('Could not remember photos folder.',e);return false}}
+async function rememberedPhotosFolder(){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readonly'),r=tx.objectStore(HANDLE_STORE).get(PHOTOS_HANDLE_KEY);return await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}catch(e){return null}}
+async function rememberBackupFolder(h){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readwrite');tx.objectStore(HANDLE_STORE).put(h,BACKUP_HANDLE_KEY);await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true}catch(e){console.warn('Could not remember backup folder.',e);return false}}
+async function rememberedBackupFolder(){try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readonly'),r=tx.objectStore(HANDLE_STORE).get(BACKUP_HANDLE_KEY);return await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}catch(e){return null}}
+async function connectBackupFolder(){if(!('showDirectoryPicker' in window)){alert('This browser cannot connect a backup folder directly. Manual backup download is still available.');return null}try{const picked=await showDirectoryPicker({mode:'readwrite'});let target=picked;if(picked.name!==AUTO_BACKUP_FOLDER_NAME)target=await picked.getDirectoryHandle(AUTO_BACKUP_FOLDER_NAME,{create:true});if(!(await verifyPermission(target,true)))throw new Error('Folder write permission was not granted.');backupFolderHandle=target;await rememberBackupFolder(target);toast('Backup folder connected');render();return target}catch(e){if(e.name!=='AbortError')alert('Could not connect backup folder: '+(e.message||e));return null}}
+async function ensureBackupFolder(promptIfMissing=false){if(backupFolderHandle&&await verifyPermission(backupFolderHandle,false))return backupFolderHandle;const h=await rememberedBackupFolder();if(h&&await verifyPermission(h,false)){backupFolderHandle=h;return h}return promptIfMissing?await connectBackupFolder():null}
+function quarterInfo(d=new Date()){const q=Math.floor(d.getMonth()/3)+1;return {year:d.getFullYear(),q,label:`${d.getFullYear()}_Q${q}`}}
+function cleanDatabaseName(name){return String(name||'').trim()}
+function databaseBaseName(name=activeDbName){let n=cleanDatabaseName(name).replace(/\.xlsx$/i,'').trim();return n||`Renoweet_OS_${quarterInfo().label}`}
+function safeFileStem(name=activeDbName){return databaseBaseName(name).replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').trim()||`Renoweet_OS_${quarterInfo().label}`}
+function databaseCacheKey(name=activeDbName){const n=cleanDatabaseName(name);return `${LOCAL_CACHE_KEY}::${encodeURIComponent(n||'UNASSIGNED')}`}
+function setActiveDatabaseName(name){activeDbName=cleanDatabaseName(name);if(activeDbName)localStorage.setItem(ACTIVE_DB_NAME_KEY,activeDbName);else localStorage.removeItem(ACTIVE_DB_NAME_KEY)}
+function lastAutoBackupKey(name=activeDbName){return `renoweetLastAutoBackup::${encodeURIComponent(cleanDatabaseName(name)||'UNASSIGNED')}`}
+async function workbookBytesFromCurrentDb(){const prev=workbook;if(!workbook)workbook=XLSX.utils.book_new();try{replaceDatabaseSheets();return XLSX.write(workbook,{bookType:'xlsx',type:'array'})}finally{if(!prev)workbook=prev}}
+async function createRotatingAutoBackup(reason='Safety backup'){try{const folder=await ensureBackupFolder(false);if(!folder)return false;const stem=safeFileStem(),candidates=[];for(let i=1;i<=3;i++){const name=`${stem}_BACKUP_${i}.xlsx`;try{const fh=await folder.getFileHandle(name);const f=await fh.getFile();candidates.push({i,name,fh,lastModified:f.lastModified||0})}catch(e){candidates.push({i,name,fh:null,lastModified:0,missing:true})}}let slot=candidates.find(x=>x.missing)||candidates.sort((a,b)=>a.lastModified-b.lastModified)[0];const fh=slot.fh||await folder.getFileHandle(slot.name,{create:true});const bytes=await workbookBytesFromCurrentDb();const w=await fh.createWritable({keepExistingData:false});await w.write(bytes);await w.close();localStorage.setItem(lastAutoBackupKey(),JSON.stringify({name:slot.name,at:new Date().toISOString(),reason,database:activeDbName||''}));toast('Safety backup updated');return true}catch(e){console.warn('Automatic backup skipped',e);return false}}
+async function connectPhotosFolder(){if(!('showDirectoryPicker' in window)){alert('This browser cannot connect a OneDrive folder directly. Use a browser/device that supports folder access.');return null}try{const picked=await showDirectoryPicker({mode:'readwrite'});let target=picked;if(picked.name!=='Renoweet OS Projects photos')target=await picked.getDirectoryHandle('Renoweet OS Projects photos',{create:true});if(!(await verifyPermission(target,true)))throw new Error('Folder write permission was not granted.');photosFolderHandle=target;await rememberPhotosFolder(target);toast('Projects photos folder connected');renderTabs();return target}catch(e){if(e.name!=='AbortError')alert('Could not connect photos folder: '+(e.message||e));return null}}
+function photoExtension(file){let n=String(file?.name||''),m=n.match(/\.([A-Za-z0-9]{1,8})$/);if(m)return m[1].toLowerCase();let t=String(file?.type||'').split('/')[1]||'jpg';return t==='jpeg'?'jpg':t.replace(/[^a-z0-9]/g,'')||'jpg'}
+function photoStoredName(p,file,i){const rand=(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,6):Math.random().toString(36).slice(2,8)).toUpperCase();return `${p.id}_${Date.now()}_${String(i+1).padStart(2,'0')}_${rand}.${photoExtension(file)}`}
+async function ensurePhotosFolder(){if(photosFolderHandle&&await verifyPermission(photosFolderHandle,false))return photosFolderHandle;let h=await rememberedPhotosFolder();if(h&&await verifyPermission(h,false)){photosFolderHandle=h;return h}return await connectPhotosFolder()}
+async function savePendingPhotosToFolder(p){if(!pendingPhotoFiles.length)return true;const folder=await ensurePhotosFolder();if(!folder)return false;const saved=[];for(let i=0;i<pendingPhotoFiles.length;i++){const file=pendingPhotoFiles[i],name=photoStoredName(p,file,i);const fh=await folder.getFileHandle(name,{create:true}),w=await fh.createWritable();await w.write(file);await w.close();saved.push({id:lineid(),date:today(),type:'Project photo',title:name,url:'',notes:`Stored in Renoweet OS Projects photos • Project ${p.id}`})}(p.documents||(p.documents=[])).push(...saved);addActivity(p,'Document',`${saved.length} project photo(s) saved to Renoweet OS Projects photos`,false);pendingPhotoFiles=[];return true}
 async function forgetRememberedHandle(){
  try{let d=await openHandleDb(),tx=d.transaction(HANDLE_STORE,'readwrite');tx.objectStore(HANDLE_STORE).delete(HANDLE_KEY);await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});return true}catch(e){console.warn('Could not clear saved XLSX handle.',e);return false}
 }
 async function resetXlsxConnection(){
  const ok=confirm('Reset the XLSX connection on THIS device?\n\nYour Renoweet projects and any unsynced local changes will stay in this browser. Only the saved file handle/permission link is cleared.');
  if(!ok)return;
+ if(localCacheDirty)await createRotatingAutoBackup('Before resetting XLSX connection');
  clearTimeout(saveTimer);fileHandle=null;await forgetRememberedHandle();await cacheBrowserState(localCacheDirty);
  dbState(false,localCacheDirty?'Unsynced local changes':'XLSX disconnected',localCacheDirty?'Your local changes are safe. Tap Connect XLSX and select the current OneDrive file to merge safely.':'Local data is kept. Tap Connect XLSX and select the current OneDrive file.');
  render();toast('XLSX connection reset');
 }
 async function eraseLocalCache(){
- const first=confirm('ERASE LOCAL CACHE on THIS device?\n\nThis permanently deletes any unsynced Renoweet changes stored only in this browser. Your OneDrive XLSX file will NOT be changed.');
+ const first=confirm(`ERASE LOCAL CACHE for ${activeDbName||'the current Renoweet database'} on THIS device?\n\nThis permanently deletes unsynced changes stored only in this browser for this XLSX. Other quarterly database caches and your OneDrive XLSX are NOT changed.`);
  if(!first)return;
  const second=confirm("Final confirmation: discard this device's local/unsynced changes and start fresh from the current XLSX?");
  if(!second)return;
+ const backedUp=await createRotatingAutoBackup('Before erasing local cache');
+ if(!backedUp&&!confirm('No automatic backup folder is connected on this device. Continue erasing the local cache anyway?'))return;
  try{
   clearTimeout(saveTimer);
   saveTimer=null;
@@ -415,7 +445,7 @@ async function eraseLocalCache(){
   await forgetRememberedHandle();
   try{
    const d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readwrite');
-   tx.objectStore(LOCAL_CACHE_STORE).delete(LOCAL_CACHE_KEY);
+   tx.objectStore(LOCAL_CACHE_STORE).delete(databaseCacheKey());
    await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
   }catch(e){console.warn('Could not delete local Renoweet cache.',e)}
   db={projects:[],bookkeeping:[],deleted:[]};
@@ -435,7 +465,7 @@ async function eraseLocalCache(){
  }
 }
 async function verifyPermission(h,ask=false){if(!h)return false;let o={mode:'readwrite'};if(await h.queryPermission(o)==='granted')return true;if(ask&&await h.requestPermission(o)==='granted')return true;return false}
-function dbState(ok,msg,detail=''){ $('dbDot').className='dot '+(ok?'ok':'warn');$('dbStatus').textContent=msg;$('dbDetail').textContent=detail;$('saveNowBtn').disabled=!fileHandle }
+function dbState(ok,msg,detail=''){ lastDbStatus={ok:!!ok,msg:String(msg||''),detail:String(detail||'')}; $('dbDot').className='dot '+(ok?'ok':'warn');$('dbStatus').textContent=msg;$('dbDetail').textContent=detail;$('saveNowBtn').disabled=!fileHandle }
 
 function openLocalCacheDb(){return new Promise((resolve,reject)=>{let r=indexedDB.open(LOCAL_CACHE_DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(LOCAL_CACHE_STORE))r.result.createObjectStore(LOCAL_CACHE_STORE)};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 async function cacheBrowserState(dirty=true){
@@ -443,24 +473,54 @@ async function cacheBrowserState(dirty=true){
   localCacheDirty=!!dirty;
   if(!localCacheDirty)lastSyncedDb=structuredClone(db);
   let d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readwrite');
-  tx.objectStore(LOCAL_CACHE_STORE).put({db:structuredClone(db),syncedDb:lastSyncedDb?structuredClone(lastSyncedDb):null,savedAt:new Date().toISOString(),dirty:localCacheDirty},LOCAL_CACHE_KEY);
+  const record={db:structuredClone(db),syncedDb:lastSyncedDb?structuredClone(lastSyncedDb):null,savedAt:new Date().toISOString(),dirty:localCacheDirty,databaseName:activeDbName||''};
+  tx.objectStore(LOCAL_CACHE_STORE).put(record,databaseCacheKey());
   await new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});
  }catch(e){console.warn('Could not cache Renoweet data locally.',e)}
 }
-async function readBrowserCache(){
+async function readBrowserCache(name=activeDbName){
  try{
-  let d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readonly'),r=tx.objectStore(LOCAL_CACHE_STORE).get(LOCAL_CACHE_KEY);
-  return await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)});
+  let d=await openLocalCacheDb(),tx=d.transaction(LOCAL_CACHE_STORE,'readonly'),store=tx.objectStore(LOCAL_CACHE_STORE),r=store.get(databaseCacheKey(name));
+  let found=await new Promise((res,rej)=>{r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)});
+  if(found)return found;
+  // One-time backwards compatibility with versions that used a single shared cache key.
+  if(!cleanDatabaseName(name)){
+   let tx2=d.transaction(LOCAL_CACHE_STORE,'readonly'),r2=tx2.objectStore(LOCAL_CACHE_STORE).get(LOCAL_CACHE_KEY);
+   return await new Promise((res,rej)=>{r2.onsuccess=()=>res(r2.result||null);r2.onerror=()=>rej(r2.error)});
+  }
+  return null;
  }catch(e){console.warn('Local Renoweet cache unavailable.',e);return null}
 }
-async function restoreBrowserCache(){
- let c=await readBrowserCache();
+async function applyBrowserCache(c,name){
  if(!c?.db||!Array.isArray(c.db.projects))return false;
+ setActiveDatabaseName(name||c.databaseName||activeDbName);
  db=c.db;lastSyncedDb=c.syncedDb||null;restoredLocalCache=true;localCacheDirty=!!c.dirty;
+ resetProjectShadows();return true;
+}
+async function restoreBrowserCache(){
+ let c=await readBrowserCache(activeDbName);
+ if(!c?.db||!Array.isArray(c.db.projects))return false;
+ await applyBrowserCache(c,activeDbName||c.databaseName||'');
  const stamp=c.savedAt?new Date(c.savedAt).toLocaleString('nl-NL'):'';
- if(localCacheDirty)dbState(false,'Unsynced local changes',`Your changes are safe on this device (${stamp}). Reconnect XLSX to sync them to OneDrive — Renoweet will not replace them with an older file.`);
- else dbState(false,'Local copy restored',`Last cached ${stamp} • reconnect XLSX to save to OneDrive.`);
- resetProjectShadows();render();return true
+ const dbLabel=activeDbName?` • ${activeDbName}`:'';
+ if(localCacheDirty)dbState(false,'Unsynced local changes',`Your changes are safe on this device (${stamp})${dbLabel}. Reconnect the SAME XLSX to sync them — another quarterly database will stay separate.`);
+ else dbState(false,'Local copy restored',`Last cached ${stamp}${dbLabel} • reconnect the same XLSX to save to OneDrive.`);
+ render();return true
+}
+async function switchDatabaseContext(selectedName){
+ selectedName=cleanDatabaseName(selectedName);
+ if(!selectedName)return {switched:false,cache:null};
+ const previous=activeDbName;
+ if(previous&&previous.toLowerCase()===selectedName.toLowerCase()){setActiveDatabaseName(selectedName);return {switched:false,cache:null}}
+ if(previous)await cacheBrowserState(localCacheDirty); // preserve the previous quarter exactly as-is on this device
+ const targetCache=await readBrowserCache(selectedName);
+ setActiveDatabaseName(selectedName);
+ if(targetCache){await applyBrowserCache(targetCache,selectedName)}
+ else{db={projects:[],bookkeeping:[],deleted:[]};lastSyncedDb=null;restoredLocalCache=false;localCacheDirty=false;resetProjectShadows()}
+ if(previous){
+  alert(`New database detected: ${selectedName}\n\n${previous} remains a separate database. Renoweet will NOT merge projects or unsynced changes between these XLSX files.`);
+ }
+ return {switched:true,cache:targetCache};
 }
 
 function cloneSafe(v){return v==null?v:structuredClone(v)}
@@ -671,11 +731,15 @@ async function loadWorkbook(h,ask){
   throw e
  }
  const f=initial.file,incomingWorkbook=initial.workbook;
+ const selectedDbName=f.name||h.name||'';
+ const context=await switchDatabaseContext(selectedDbName);
 
- // Multi-device recovery: local unsynced work is merged with the CURRENT logical XLSX contents.
+ // Multi-device recovery applies ONLY to the cache belonging to this exact XLSX filename.
+ // A different quarterly filename is a different database and is never cross-merged.
  if(restoredLocalCache&&localCacheDirty){
   const ok=confirm('Unsynced Renoweet changes were found on this device.\n\nRenoweet will MERGE them with the current XLSX. Matching record IDs are updated instead of duplicated. If the same field changed on both devices, the newer field timestamp wins.\n\nContinue with safe merge?');
   if(!ok){dbState(false,'Local changes kept','Nothing was overwritten. Your unsynced changes are still safe in this browser.');return false}
+  await createRotatingAutoBackup('Before multi-device merge');
 
   const localSnapshot=cloneSafe(db),remembered=await rememberHandle(h);
   fileHandle=h;let lastResult=null,lastError=null;
@@ -727,9 +791,9 @@ async function loadWorkbook(h,ask){
   return false;
  }
 
- workbook=incomingWorkbook;fileHandle=h;db=initial.db;resetProjectShadows();restoredLocalCache=false;localCacheDirty=false;
+ workbook=incomingWorkbook;fileHandle=h;setActiveDatabaseName(selectedDbName);db=initial.db;resetProjectShadows();restoredLocalCache=false;localCacheDirty=false;
  await cacheBrowserState(false);const remembered=await rememberHandle(h);staleFileAlerted=false;
- dbState(true,'Connected',f.name+(remembered?' • autosave on':' • connected for this session'));render();return true
+ dbState(true,'Connected',`${activeDbName} • separate quarterly database`+(remembered?' • autosave on':' • connected for this session'));render();return true
 }
 function rows(name){let ws=workbook?.Sheets?.[name];return ws?XLSX.utils.sheet_to_json(ws,{defval:'',raw:false}):[]}
 function parseWorkbook(){
@@ -779,12 +843,14 @@ function replaceDatabaseSheets(){
  workbook.Sheets['Purchase Orders']=sheetFromRows(["Project ID","Order ID","Supplier","Description","Order Date","Expected Date","Status","Amount","Reference"],orderRows);
  workbook.Sheets['Activity']=sheetFromRows(["Project ID","Activity ID","Timestamp","Type","Text"],activityRows);
  workbook.Sheets['FollowUps']=sheetFromRows(["Project ID","Follow-up ID","Date","Type","Text","Done"],followRows);
- const bookkeepingHeaders=["Invoice number","Invoice date","Due date","Customer","Address","Project","Description","Subtotal ex VAT","VAT rate","VAT","Total incl VAT","Status","Sent at","Project ID"];
+ const bookkeepingHeaders=["Invoice number","Invoice date","Due date","Customer","Phone","Email","Address","Project","Description","Subtotal ex VAT","VAT rate","VAT","Total incl VAT","Status","Sent at","Project ID","Source database"];
  const bookkeepingRows=(db.bookkeeping||[]).map(r=>({
    "Invoice number":r["Invoice number"]||"",
    "Invoice date":r["Invoice date"]||"",
    "Due date":r["Due date"]||"",
    "Customer":r["Customer"]||"",
+   "Phone":r["Phone"]||"",
+   "Email":r["Email"]||"",
    "Address":r["Address"]||"",
    "Project":r["Project"]||"",
    "Description":r["Description"]||"",
@@ -794,11 +860,12 @@ function replaceDatabaseSheets(){
    "Total incl VAT":r["Total incl VAT"]||0,
    "Status":r["Status"]||"",
    "Sent at":r["Sent at"]||"",
-   "Project ID":r["Project ID"]||""
+   "Project ID":r["Project ID"]||"",
+   "Source database":r["Source database"]||activeDbName||""
  }));
  workbook.Sheets['Bookkeeping']=sheetFromRows(bookkeepingHeaders,bookkeepingRows);
 
- const deletedHeaders=["Deleted at","Project ID","Title","Customer","Phone","Email","Address","Stage","Invoice number","Invoice status","Quote number","Created","Updated","Original JSON"];
+ const deletedHeaders=["Deleted at","Project ID","Title","Customer","Phone","Email","Address","Stage","Invoice number","Invoice status","Quote number","Created","Updated","Calendar Event ID","Calendar Shared With","Calendar Deletion Pending","Calendar Deleted At","Original JSON"];
  const deletedRows=(db.deleted||[]).map(r=>({
    "Deleted at":r["Deleted at"]||"",
    "Project ID":r["Project ID"]||"",
@@ -818,7 +885,7 @@ function replaceDatabaseSheets(){
  workbook.Sheets['Deleted']=sheetFromRows(deletedHeaders,deletedRows);
 
  let names=['Settings','Projects','Estimate','Materials','Documents','Payments','Purchase Orders','Activity','FollowUps','Checklist','Bookkeeping','Deleted'];
- names.forEach(n=>{if(!workbook.Sheets[n]&&n==='Settings')workbook.Sheets[n]=XLSX.utils.aoa_to_sheet([['Renoweet OS Database','Value'],['Business','Renoweet'],['KVK','97746312'],['Website','www.renoweet.nl']])});
+ workbook.Sheets['Settings']=XLSX.utils.aoa_to_sheet([['Renoweet OS Database','Value'],['Business','Renoweet'],['KVK','97746312'],['Website','www.renoweet.nl'],['Database file',activeDbName||''],['Database identity',databaseBaseName()],['Database model','Separate quarterly XLSX']]);
  workbook.SheetNames=[...names.filter(n=>workbook.Sheets[n]),...workbook.SheetNames.filter(n=>!names.includes(n)&&workbook.Sheets[n])];
 }
 function scheduleSave(){
@@ -850,7 +917,7 @@ async function createTimestampedBackup(){
   replaceDatabaseSheets();
   const bytes=XLSX.write(workbook,{bookType:'xlsx',type:'array'});
   const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const name=`Renoweet_OS_Backup_${timestampFilePart()}.xlsx`;
+  const name=`${safeFileStem()}_Manual_Backup_${timestampFilePart()}.xlsx`;
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
   let p=getP();if(p)addActivity(p,'Backup',`Timestamped database backup created: ${name}`,false);
   toast('Backup downloaded');
@@ -894,17 +961,42 @@ function scheduleHTML(){
  const rows=ps.map(p=>`<div class="plan-list-row"><div class="plan-date">${fmtDate(p.schedule.start)}<small>${esc(scheduleTimeLabel(p))}</small></div><div><b>${esc(p.title||'Untitled')}</b><div class="small">${esc(p.customer.name||'')} ${p.customer.address?'• '+esc(p.customer.address):''}</div><div class="plan-sync ${p.schedule.calendarEventId?'synced':'local'}">${p.schedule.calendarEventId?'Google Calendar linked':'Renoweet OS only'}</div></div><div class="actions"><button class="btn" onclick="openProject('${p.id}','schedule')">Open</button><button class="btn primary" onclick="syncProjectCalendarById('${p.id}')">${p.schedule.calendarEventId?'Update calendar':'Add to calendar'}</button>${p.schedule.calendarEventId?`<button class="btn danger" onclick="removeProjectCalendarById('${p.id}')">Remove calendar</button>`:''}</div></div>`).join('');
  return `${setup}<div class="plan-toolbar"><div class="plan-status ${connected?'ok':''}">${connected?'● Google Calendar connected':'○ Google Calendar not connected'}</div><button class="btn" onclick="connectGoogleCalendar()">${connected?'Reconnect Google':'Connect Google Calendar'}</button><button class="btn primary" onclick="syncAllScheduledJobs()">Sync all jobs</button><span class="spacer"></span><button class="btn" onclick="shiftPlanWeek(-7)">← Previous</button><button class="btn" onclick="planWeekOffset=0;render()">This week</button><button class="btn" onclick="shiftPlanWeek(7)">Next →</button></div><div class="plan-grid">${week}</div>${ps.length?`<div class="section-title"><h2>Scheduled jobs</h2><span class="small">Renoweet OS → Google Calendar</span></div><div class="plan-list">${rows}</div>`:'<div class="card empty" style="margin-top:14px">No scheduled jobs yet. Open a project and use its Schedule tab.</div>'}`;
 }
-function backupHTML(){return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))"><div class="card"><h3>OneDrive XLSX database</h3><p class="small">Use the included <b>Renoweet_OS_Database.xlsx</b>. Put it in your local OneDrive folder, then connect it here in Edge or Chrome.</p><div class="actions"><button class="btn primary" onclick="connectWorkbook()">Connect XLSX</button><button class="btn" onclick="resetXlsxConnection()">Reset connection</button></div><p class="small" style="margin-top:8px">Reset clears only this device's saved file handle. Cached Renoweet data and unsynced changes are kept.</p></div><div class="card"><h3>Save behavior</h3><p class="small">Project changes autosave to the local XLSX. OneDrive then syncs the file. If another device has unsynced edits, Renoweet merges matching record IDs on reconnect instead of replacing the whole database. Invoices sent from Renoweet OS are stored in a dedicated Bookkeeping sheet inside this OS database. Your formatted bookkeeping master workbook remains separate, so its formatting and charts are not exposed to browser rewriting.</p><button class="btn" onclick="saveWorkbook(true)">Save now</button></div><div class="card"><h3>Timestamped backup</h3><p class="small">Create a full XLSX backup copy before major changes. The connected OneDrive database stays untouched.</p><button class="btn primary" onclick="createTimestampedBackup()">Create backup copy</button></div><div class="card"><h3>PIN security</h3><p class="small">Renoweet OS locks when a new browser session starts. The PIN is stored on this device as a salted cryptographic hash, not as plain text.</p><div class="actions"><button class="btn" onclick="lockRenoweet()">Lock now</button><button class="btn" onclick="changePin()">Change PIN</button></div></div><div class="card"><h3>Mobile use</h3><p class="small">The interface itself is mobile friendly. Direct local XLSX writing is most reliable on desktop Edge/Chrome. On phones, file-system access support depends on the browser/device.</p></div></div>`}
+function syncStatusHTML(){
+ const lastAuto=(()=>{try{return JSON.parse(localStorage.getItem(lastAutoBackupKey())||'null')}catch{return null}})();
+ const xlsx=fileHandle?(localCacheDirty?'🟠 Local changes pending':'🟢 XLSX connected'):(localCacheDirty?'🟠 Local changes pending':'🔴 XLSX disconnected');
+ const google=googleAccessToken?'🟢 Google Calendar connected':'⚪ Google Calendar disconnected';
+ const auto=lastAuto?.at?`Last auto backup ${new Date(lastAuto.at).toLocaleString('nl-NL')} • ${esc(lastAuto.name||'')}`:'Automatic backup folder not used yet';
+ return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-bottom:14px"><div class="card"><h3>Sync status</h3><p><b>Database: ${esc(activeDbName||'No XLSX selected')}</b></p><p class="small">Each XLSX filename is treated as a separate quarterly database.</p><p><b>${xlsx}</b></p><p class="small">${esc(lastDbStatus.detail||lastDbStatus.msg||'')}</p><p><b>${google}</b></p><p class="small">${auto}</p></div></div>`;
+}
+function databaseHealthIssues(){
+ const issues=[],ids=new Map(),invs=new Map(),customers=new Map();
+ for(const p of db.projects||[]){
+  ids.set(p.id,(ids.get(p.id)||0)+1);
+  if(!String(p.customer?.name||'').trim())issues.push(`${p.id}: missing customer name`);
+  if(!String(p.customer?.phone||'').trim())issues.push(`${p.id}: missing phone number`);
+  if(p.schedule?.start&&!/^\d{4}-\d{2}-\d{2}$/.test(String(p.schedule.start)))issues.push(`${p.id}: invalid schedule start date`);
+  if(p.invoice?.number){const n=p.invoice.number;invs.set(n,(invs.get(n)||0)+1)}
+  const ck=(normalizeWhatsAppNumber(p.customer?.phone)||String(p.customer?.email||'').trim().toLowerCase());if(ck){const a=customers.get(ck)||[];a.push(p.id);customers.set(ck,a)}
+ }
+ for(const [id,n] of ids)if(n>1)issues.push(`Duplicate Project ID: ${id} (${n} records)`);
+ for(const [n,c] of invs)if(c>1)issues.push(`Duplicate invoice number: ${n} (${c} records)`);
+ for(const r of db.deleted||[])if(r['Calendar Deletion Pending'])issues.push(`Pending calendar deletion: ${r['Project ID']||r['Title']||'deleted project'}`);
+ if(localCacheDirty)issues.push('This device has unsynced local changes.');
+ return issues;
+}
+function runDatabaseHealthCheck(){const issues=databaseHealthIssues();if(!issues.length){alert('Database health check passed.\n\nNo duplicate Project IDs, duplicate invoice numbers, missing required customer details, invalid schedule dates, pending calendar deletions, or unsynced local changes were found.');return}alert(`Database health check found ${issues.length} item(s):\n\n`+issues.slice(0,25).map((x,i)=>`${i+1}. ${x}`).join('\n')+(issues.length>25?`\n\n…and ${issues.length-25} more.`:''))}
+function backupHTML(){return `${syncStatusHTML()}<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))"><div class="card"><h3>OneDrive XLSX database</h3><p class="small">Each XLSX filename is a separate quarterly database. Example: Q1 Jan - Mar.xlsx and Q2 Apr - Jun.xlsx never merge with each other. Reset clears only this device's saved file handle; that database's cache is kept.</p><div class="actions"><button class="btn primary" onclick="connectWorkbook()">Connect XLSX</button><button class="btn" onclick="resetXlsxConnection()">Reset connection</button></div></div><div class="card"><h3>Save behavior</h3><p class="small">Changes autosave to the connected XLSX. If another device has unsynced edits, Renoweet merges matching record IDs and keeps the newest value when the same field changed on both devices.</p><button class="btn" onclick="saveWorkbook(true)">Save now</button></div><div class="card"><h3>Quarterly rotating safety backups</h3><p class="small">Connect a OneDrive folder once. Renoweet keeps only 3 automatic backups for the currently connected XLSX filename and overwrites the oldest slot before risky operations. Manual backups remain separate.</p><div class="actions"><button class="btn primary" onclick="connectBackupFolder()">Connect backup folder</button><button class="btn" onclick="createTimestampedBackup()">Manual backup</button></div><p class="small" style="margin-top:8px">Example: Q2 Apr - Jun_BACKUP_1.xlsx to BACKUP_3.xlsx.</p></div><div class="card"><h3>Database health</h3><p class="small">Checks duplicate project IDs, duplicate invoice numbers, missing required client details, invalid schedule dates, pending calendar deletions and unsynced local state.</p><button class="btn primary" onclick="runDatabaseHealthCheck()">Run health check</button></div><div class="card"><h3>PIN security</h3><p class="small">Renoweet OS locks when a new browser session starts. The PIN is stored on this device as a salted cryptographic hash, not plain text.</p><div class="actions"><button class="btn" onclick="lockRenoweet()">Lock now</button><button class="btn" onclick="changePin()">Change PIN</button></div></div><div class="card"><h3>Mobile use</h3><p class="small">Direct local XLSX writing depends on browser/device support. Renoweet keeps a protected local copy when a mobile browser drops file permission.</p></div></div>`}
 function render(){let root=$('viewRoot');if(currentView==='dashboard')root.innerHTML=dashboardHTML();if(currentView==='projects')root.innerHTML=projectsHTML();if(currentView==='pipeline')root.innerHTML=pipelineHTML();if(currentView==='customers')root.innerHTML=customersHTML();if(currentView==='schedule')root.innerHTML=scheduleHTML();if(currentView==='backup')root.innerHTML=backupHTML();if(currentView==='projects'){let f=$('projectFilter');f.oninput=()=>{$('projectList').innerHTML=projectRowsHTML(db.projects.filter(p=>JSON.stringify(p).toLowerCase().includes(f.value.toLowerCase())))}}}
 
-function getP(){return db.projects.find(p=>p.id===currentProjectId)}
+function getP(){if(draftProject&&draftProject.id===currentProjectId)return draftProject;return db.projects.find(p=>p.id===currentProjectId)}
 const tabs=[['intake','Intake'],['scope','Scope'],['estimate','Estimate'],['quote','Quotation'],['materials','Materials'],['documents','Documents & Photos'],['payments','Payments'],['orders','Orders'],['schedule','Schedule'],['followups','Follow-up'],['acceptance','Acceptance'],['messages','Messages'],['invoice','Invoice'],['activity','Activity'],['checklist','Checklist'],['projectbackup','Backup']];
-function openProject(id,tab='intake'){currentProjectId=id;currentTab=tab;let p=getP();if(!p)return;$('projectModal').classList.add('open');$('modalTitle').textContent=p.title||'New project';$('modalMeta').textContent=`${p.id} • ${p.stage}`;renderTabs()}
-function closeProject(){$('projectModal').classList.remove('open');currentProjectId=null;render()}
+function openProject(id,tab='intake'){draftProject=null;pendingPhotoFiles=[];formDirty=false;currentProjectId=id;currentTab=tab;let p=getP();if(!p)return;$('projectModal').classList.add('open');$('modalTitle').textContent=p.title||'New project';$('modalMeta').textContent=`${p.id} • ${p.stage}`;renderTabs()}
+function startNewProject(){draftProject=blankProject();pendingPhotoFiles=[];formDirty=false;currentProjectId=draftProject.id;currentTab='intake';$('projectModal').classList.add('open');$('modalTitle').textContent='New project';$('modalMeta').textContent=`${draftProject.id} • Not saved yet`;renderTabs()}
+function closeProject(){if(formDirty&&!confirm('This project form has unsaved changes. Close without saving them?'))return;if(draftProject&&currentProjectId===draftProject.id){draftProject=null;pendingPhotoFiles=[]}formDirty=false;$('projectModal').classList.remove('open');currentProjectId=null;render()}
 function renderTabs(){let p=getP();$('projectTabs').innerHTML=tabs.map(([k,l])=>`<button class="${currentTab===k?'active':''}" onclick="switchTab('${k}')">${l}</button>`).join('');$('projectTabContent').innerHTML=tabHTML(p,currentTab);bindTab()}
 function switchTab(t){saveProjectFromForm(false);currentTab=t;renderTabs()}
 function tabHTML(p,t){
- if(t==='intake')return `<div class="formgrid"><div class="field"><label>Project title</label><input id="f_title" value="${esc(p.title)}"></div><div class="field"><label>Stage</label><select id="f_stage">${stages.map(s=>`<option ${p.stage===s?'selected':''}>${s}</option>`).join('')}</select></div><div class="field"><label>Customer name</label><input id="f_name" value="${esc(p.customer.name)}"></div><div class="field"><label>Phone</label><input id="f_phone" inputmode="tel" value="${esc(p.customer.phone)}"></div><div class="field"><label>Email</label><input id="f_email" inputmode="email" value="${esc(p.customer.email)}"></div><div class="field"><label>Address</label><input id="f_address" value="${esc(p.customer.address)}"></div><div class="field full"><label>Customer description / request</label><textarea id="f_description">${esc(p.description)}</textarea></div><div class="field full"><label>Photos</label><input id="photoInput" type="file" accept="image/*" capture="environment" multiple><div class="small">Photo preview only in this XLSX version; images are not stored inside the database yet.</div><div id="photoPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div></div><div class="field full"><label>Internal notes</label><textarea id="f_notes">${esc(p.notes)}</textarea></div></div><div class="ai"><b>Draft assistant</b><p>Create a starter scope and estimate from the customer description.</p><button class="btn primary" onclick="smartDraft()">Draft scope + estimate</button></div>`;
+ if(t==='intake')return `<div class="formgrid"><div class="field"><label>Project title</label><input id="f_title" value="${esc(p.title)}"></div><div class="field"><label>Stage</label><select id="f_stage">${stages.map(s=>`<option ${p.stage===s?'selected':''}>${s}</option>`).join('')}</select></div><div class="field"><label>Customer name *</label><input id="f_name" required value="${esc(p.customer.name)}"></div><div class="field"><label>Phone *</label><input id="f_phone" required inputmode="tel" value="${esc(p.customer.phone)}"></div><div class="field"><label>Email</label><input id="f_email" inputmode="email" value="${esc(p.customer.email)}"></div><div class="field"><label>Address</label><input id="f_address" value="${esc(p.customer.address)}"></div><div class="field full"><label>Customer description / request</label><textarea id="f_description">${esc(p.description)}</textarea></div><div class="field full"><label>Project photos</label><input id="photoInput" type="file" accept="image/*" capture="environment" multiple><div class="actions" style="margin-top:8px"><button class="btn" type="button" onclick="connectPhotosFolder()">Connect photos folder</button><span class="small">${photosFolderHandle?'✓ Renoweet OS Projects photos connected':'Saved on Save into “Renoweet OS Projects photos”.'}</span></div><div class="small">Each photo is renamed with this unique Project ID.</div><div id="photoPreview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div></div><div class="field full"><label>Internal notes</label><textarea id="f_notes">${esc(p.notes)}</textarea></div></div><div class="ai"><b>Draft assistant</b><p>Create a starter scope and estimate from the customer description.</p><button class="btn primary" onclick="smartDraft()">Draft scope + estimate</button></div>`;
  if(t==='scope')return `<div class="field"><label>Scope of work</label><textarea id="f_scope" style="min-height:250px">${esc(p.scope)}</textarea></div><div class="ai"><b>Scope check</b><p>${(p.scope||'').length<80?'Scope is still short. Add measurements, exclusions and materials.':'Confirm measurements, exclusions and customer responsibilities before sending.'}</p></div>`;
  if(t==='estimate')return `<div class="tablewrap"><table class="lineitems"><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Rate</th><th>Total</th><th></th></tr></thead><tbody id="estRows">${p.estimate.map((x,i)=>`<tr><td><input class="e_desc" value="${esc(x.desc)}"></td><td><input class="e_qty" type="number" step=".01" value="${x.qty}"></td><td><input class="e_unit" value="${esc(x.unit)}"></td><td><input class="e_rate" type="number" step=".01" value="${x.rate}"></td><td>${money(x.qty*x.rate)}</td><td><button class="btn danger" onclick="removeEst(${i})">×</button></td></tr>`).join('')}</tbody></table></div><button class="btn" style="margin-top:10px" onclick="addEstimate()">+ Line</button>${totalsHTML(p)}`;
  if(t==='quote')return quoteHTML(p);
@@ -915,7 +1007,7 @@ function tabHTML(p,t){
  if(t==='followups')return followUpsHTML(p);
  if(t==='acceptance')return acceptanceHTML(p);
  if(t==='activity')return activityHTML(p);
- if(t==='projectbackup')return `<div class="card"><h3>Timestamped XLSX backup</h3><p class="small">Creates a complete copy of the Renoweet OS database without changing your connected OneDrive XLSX. Keep important backups in your OneDrive backup folder.</p><button class="btn primary" onclick="createTimestampedBackup()">Create backup copy</button></div>`;
+ if(t==='projectbackup')return `<div class="card"><h3>Quarterly backups</h3><p class="small">Automatic safety backups rotate through only 3 files for the currently connected quarterly XLSX when a backup folder is connected. Use Manual backup when you want an extra timestamped copy.</p><div class="actions"><button class="btn" onclick="connectBackupFolder()">Connect backup folder</button><button class="btn primary" onclick="createTimestampedBackup()">Manual backup</button></div></div>`;
  if(t==='schedule')return `<div class="formgrid"><div class="field"><label>Start date *</label><input id="s_start" type="date" value="${p.schedule.start}"></div><div class="field"><label>End date *</label><input id="s_end" type="date" value="${p.schedule.end||p.schedule.start}"></div><div class="field"><label>Start time *</label><input id="s_time" type="time" value="${normalizeTimeInput(p.schedule.time)}"></div><div class="field"><label>End time *</label><input id="s_endtime" type="time" value="${normalizeTimeInput(p.schedule.endTime)||'17:00'}"></div><div class="field full"><label>Planning notes</label><textarea id="s_notes">${esc(p.schedule.notes)}</textarea></div><div class="field full"><label style="display:flex;align-items:center;gap:9px;font-size:14px;color:var(--text)"><input id="s_share_client" type="checkbox" style="width:auto" ${p.schedule.shareClient?'checked':''}> Share this schedule with the client by Google Calendar invitation</label><div class="small">When enabled, the client receives an invitation. If you later change the schedule and sync again, Google sends the client an updated invitation automatically.</div></div><div class="field full"><label>Client calendar email</label><input id="s_invite_email" type="email" value="${esc(p.schedule.inviteEmail||p.customer.email||'')}" placeholder="client@example.com"></div></div><div class="actions" style="margin-top:12px"><button class="btn primary" onclick="saveAndSyncCurrentSchedule()">Save + sync Google Calendar</button>${p.schedule.calendarEventId?`<button class="btn danger" onclick="removeCurrentProjectCalendar()">Remove from Google Calendar</button>`:''}${p.schedule.calendarHtmlLink?`<button class="btn" onclick="window.open('${esc(p.schedule.calendarHtmlLink)}','_blank')">Open Google Calendar</button>`:''}${p.schedule.calendarEventId&&p.schedule.calendarSharedWith?`<button class="btn" onclick="refreshCurrentInviteStatus()">Refresh client status</button>`:''}</div><div class="small" style="margin-top:8px">${p.schedule.calendarEventId?'Linked to Google Calendar'+(p.schedule.calendarSyncedAt?' • last sync '+esc(p.schedule.calendarSyncedAt):''):'Not yet linked to Google Calendar.'}${p.schedule.calendarSharedWith?`<br>Client invite: <b>${esc(p.schedule.calendarSharedWith)}</b> • ${esc(inviteStatusLabel(p.schedule.inviteStatus))}`:''}</div><div class="ai"><b>Customer confirmation</b><p>The Google invitation is the live appointment. You can also copy the message or send the current schedule directly by WhatsApp.</p><button class="btn" onclick="copyScheduleMessage()">Copy message</button><button class="btn primary" onclick="sendScheduleWhatsApp()" title="Send schedule by WhatsApp" aria-label="Send schedule by WhatsApp" style="display:inline-flex;align-items:center;gap:8px;margin-left:8px"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 3.2A12.6 12.6 0 0 0 5.1 22.1L3.2 28.8l6.9-1.8A12.6 12.6 0 1 0 16 3.2Zm0 22.9c-2 0-3.9-.6-5.5-1.6l-.4-.2-4.1 1.1 1.1-4-.3-.4A10.3 10.3 0 1 1 16 26.1Zm5.7-7.7c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-1.8-.9-3-1.6-4.2-3.6-.3-.5.3-.5.9-1.6.1-.2.1-.4 0-.6-.1-.2-.7-1.7-1-2.3-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9 0 1.7 1.2 3.3 1.4 3.5.2.2 2.4 3.7 5.8 5.2.8.3 1.4.5 1.9.7.8.3 1.5.2 2.1.1.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.3.2-1.5-.1-.1-.3-.2-.6-.4Z"/></svg><span>WhatsApp client</span></button></div>`;
  if(t==='messages'){let qs=`Beste ${p.customer.name||'klant'}, bedankt voor uw aanvraag. De offerte voor "${p.title||'uw project'}" staat klaar. Totaal: ${money(projectTotals(p).total)} incl. btw. Groet, Renoweet`,rev=`Beste ${p.customer.name||'klant'}, bedankt voor de opdracht. Als u tevreden bent, zou een korte review ons enorm helpen. Alvast bedankt! Groet, Renoweet`;return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(250px,1fr))">${msgCard('Quotation message',qs)}${msgCard('Review request',rev)}${msgCard('Referral request',`Beste ${p.customer.name||'klant'}, kent u iemand die ook een renovatie- of technische klus heeft? Een aanbeveling wordt zeer gewaardeerd. Groet, Renoweet`)}</div>`}
  if(t==='invoice')return invoiceHTML(p);
@@ -1265,10 +1357,19 @@ function markAcceptedNow(){let p=getP();if(!p)return;p.acceptance={...(p.accepta
 
 function msgCard(t,m){return `<div class="card"><h3>${t}</h3><textarea style="min-height:150px">${esc(m)}</textarea><button class="btn" onclick="copyText(this.previousElementSibling.value)">Copy</button></div>`}
 
-function bindTab(){let inp=$('photoInput');if(inp)inp.onchange=e=>{let b=$('photoPreview');b.innerHTML='';[...e.target.files].slice(0,8).forEach(f=>{let i=document.createElement('img');i.src=URL.createObjectURL(f);i.style.cssText='width:92px;height:72px;object-fit:cover;border-radius:9px;border:1px solid var(--line)';b.appendChild(i)})}}
+function bindTab(){const body=$('tabBody');if(body){body.querySelectorAll('input,textarea,select').forEach(el=>{el.addEventListener('input',()=>formDirty=true,{once:false});el.addEventListener('change',()=>formDirty=true,{once:false})})}let inp=$('photoInput');if(inp)inp.onchange=e=>{formDirty=true;pendingPhotoFiles=[...e.target.files];let b=$('photoPreview');b.innerHTML='';pendingPhotoFiles.slice(0,8).forEach(f=>{let i=document.createElement('img');i.src=URL.createObjectURL(f);i.style.cssText='width:92px;height:72px;object-fit:cover;border-radius:9px;border:1px solid var(--line)';b.appendChild(i)});if(pendingPhotoFiles.length){let n=document.createElement('div');n.className='small';n.style.width='100%';n.textContent=`${pendingPhotoFiles.length} photo(s) ready — saved when you press Save.`;b.appendChild(n)}}}
 function readEstimate(p){let rs=document.querySelectorAll('#estRows tr');if(rs.length)p.estimate=[...rs].map((r,i)=>({id:p.estimate[i]?.id||lineid(),desc:r.querySelector('.e_desc').value,qty:+r.querySelector('.e_qty').value||0,unit:r.querySelector('.e_unit').value,rate:+r.querySelector('.e_rate').value||0}))}
 function readMaterials(p){let rs=document.querySelectorAll('#matRows tr');if(rs.length)p.materials=[...rs].map((r,i)=>({id:p.materials[i]?.id||lineid(),desc:r.querySelector('.m_desc').value,qty:r.querySelector('.m_qty').value,supplier:r.querySelector('.m_supplier').value,cost:+r.querySelector('.m_cost').value||0}))}
-function saveProjectFromForm(show=true){let p=getP();if(!p)return;if($('f_title')){p.title=$('f_title').value;p.stage=$('f_stage').value;p.customer.name=$('f_name').value;p.customer.phone=$('f_phone').value;p.customer.email=$('f_email').value;p.customer.address=$('f_address').value;p.description=$('f_description').value;p.notes=$('f_notes').value}if($('f_scope'))p.scope=$('f_scope').value;readEstimate(p);readMaterials(p);if($('s_start'))p.schedule={...p.schedule,start:$('s_start').value,end:$('s_end').value||$('s_start').value,time:$('s_time').value,endTime:$('s_endtime')?$('s_endtime').value:(p.schedule.endTime||''),notes:$('s_notes').value,shareClient:!!$('s_share_client')?.checked,inviteEmail:($('s_invite_email')?.value||'').trim()};if($('q_number')){p.quote.number=$('q_number').value;p.quote.date=$('q_date').value}if($('i_number')){p.invoice.number=$('i_number').value;p.invoice.date=$('i_date').value;p.invoice.dueDays=+$('i_due').value||14}document.querySelectorAll('.c_done').forEach(c=>{if(p.checklist[c.dataset.i])p.checklist[c.dataset.i].done=c.checked});p.updated=nowStamp();scheduleSave();if(show)toast()}
+function normalizePhoneForStorage(raw){let t=String(raw||'').trim();if(!t)return '';let d=t.replace(/\D/g,'');if(d.startsWith('0031'))d='31'+d.slice(4);if(d.startsWith('316')&&d.length===11)return `+31 6 ${d.slice(3,7)} ${d.slice(7)}`;if(d.startsWith('06')&&d.length===10)return `06 ${d.slice(2,6)} ${d.slice(6)}`;return t.replace(/\s+/g,' ')}
+function findExistingCustomerFor(p){const phone=normalizeWhatsAppNumber(p.customer?.phone),email=String(p.customer?.email||'').trim().toLowerCase();return (db.projects||[]).find(x=>x.id!==p.id&&((phone&&normalizeWhatsAppNumber(x.customer?.phone)===phone)||(email&&String(x.customer?.email||'').trim().toLowerCase()===email)))}
+function saveProjectFromForm(show=true){let p=getP();if(!p)return;if($('f_title')){p.title=$('f_title').value;p.stage=$('f_stage').value;p.customer.name=$('f_name').value;p.customer.phone=normalizePhoneForStorage($('f_phone').value);p.customer.email=$('f_email').value;p.customer.address=$('f_address').value;p.description=$('f_description').value;p.notes=$('f_notes').value}if($('f_scope'))p.scope=$('f_scope').value;readEstimate(p);readMaterials(p);if($('s_start'))p.schedule={...p.schedule,start:$('s_start').value,end:$('s_end').value||$('s_start').value,time:$('s_time').value,endTime:$('s_endtime')?$('s_endtime').value:(p.schedule.endTime||''),notes:$('s_notes').value,shareClient:!!$('s_share_client')?.checked,inviteEmail:($('s_invite_email')?.value||'').trim()};if($('q_number')){p.quote.number=$('q_number').value;p.quote.date=$('q_date').value}if($('i_number')){p.invoice.number=$('i_number').value;p.invoice.date=$('i_date').value;p.invoice.dueDays=+$('i_due').value||14}document.querySelectorAll('.c_done').forEach(c=>{if(p.checklist[c.dataset.i])p.checklist[c.dataset.i].done=c.checked});p.updated=nowStamp();formDirty=false;scheduleSave();if(show)toast()}
+async function saveProjectAndClose(){let p=getP();if(!p)return;saveProjectFromForm(false);const isDraft=!!(draftProject&&p.id===draftProject.id);if(isDraft){if(!String(p.customer?.name||'').trim()){alert('Customer name is required before a new project can be saved.');currentTab='intake';renderTabs();return}if(!String(p.customer?.phone||'').trim()){alert('Phone number is required before a new project can be saved.');currentTab='intake';renderTabs();return}const existing=findExistingCustomerFor(p);if(existing){const use=confirm(`This phone/email already belongs to an existing customer:
+
+${existing.customer.name||'Unnamed customer'}
+${existing.customer.phone||''}
+${existing.customer.email||''}
+
+Use the existing customer details for this new project?`);if(use)p.customer={...existing.customer,...p.customer,name:existing.customer.name||p.customer.name,phone:existing.customer.phone||p.customer.phone,email:existing.customer.email||p.customer.email,address:p.customer.address||existing.customer.address}}db.projects.unshift(p);draftProject=null;resetProjectShadows()}if(pendingPhotoFiles.length){try{const ok=await savePendingPhotosToFolder(p);if(!ok)alert('Project saved, but selected photos were not stored because the photos folder is not connected.')}catch(e){alert('Project saved, but photos could not be stored: '+(e.message||e))}}p.updated=nowStamp();formDirty=false;scheduleSave();$('projectModal').classList.remove('open');currentProjectId=null;render();toast(isDraft?'Project created':'Saved')}
 function addEstimate(){let p=getP();readEstimate(p);p.estimate.push({id:lineid(),desc:'',qty:1,unit:'uur',rate:62.5});renderTabs()}
 function removeEst(i){let p=getP();readEstimate(p);p.estimate.splice(i,1);renderTabs()}
 function addMaterial(){let p=getP();readMaterials(p);p.materials.push({id:lineid(),desc:'',qty:1,supplier:'',cost:0});renderTabs()}
@@ -1294,31 +1395,31 @@ function deletedProjectRow(p){
   "Quote number":p.quote?.number||"",
   "Created":p.created||"",
   "Updated":p.updated||"",
+  "Calendar Event ID":p.schedule?.calendarEventId||"",
+  "Calendar Shared With":p.schedule?.calendarSharedWith||"",
+  "Calendar Deletion Pending":!!p.schedule?.calendarEventId,
+  "Calendar Deleted At":"",
   "Original JSON":JSON.stringify(p)
  };
 }
 
-function moveCurrentProjectToDeleted(){
- let p=getP();
- if(!p)return;
- saveProjectFromForm(false);
+async function moveCurrentProjectToDeleted(){
+ let p=getP();if(!p)return;
+ if(draftProject&&p.id===draftProject.id){if(confirm('Discard this unsaved new project?'))closeProject();return}
+ saveProjectFromForm(false);const label=p.title||p.id||'this project';
+ if(!confirm(`Delete project from active Renoweet OS?
 
- const label=p.title||p.id||"this project";
- const ok=confirm(`Are you sure you want to move "${label}" to Deleted?
+Project: ${label}
+Customer: ${p.customer?.name||'—'}
+Phone: ${p.customer?.phone||'—'}
 
-The project will disappear from Renoweet OS project lists, dashboard totals and calculations, but a complete copy will remain in the Excel workbook's Deleted sheet until you remove it manually.`);
- if(!ok)return;
+The project will be moved to the Deleted sheet, not permanently erased. If it has a Google Calendar appointment, Renoweet will cancel it when possible. If the client was invited, Google may send a cancellation notification.
 
- db.deleted.push(deletedProjectRow(p));
- db.projects=db.projects.filter(x=>x.id!==p.id);
-
- // Keep any bookkeeping invoice record intact for accounting/history.
- currentProjectId=null;
- $('projectModal').classList.remove('open');
- scheduleSave();
- render();
- toast('Project moved to Deleted');
- alert(`"${label}" was moved to the Deleted sheet.`);
+Continue?`))return;
+ const row=deletedProjectRow(p);
+ if(p.schedule?.calendarEventId&&googleAccessToken){try{await calendarFetch(eventPathWithUpdates(`/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events/${encodeURIComponent(p.schedule.calendarEventId)}`,p.schedule.calendarSharedWith?'all':'none'),{method:'DELETE'});row['Calendar Deletion Pending']=false;row['Calendar Deleted At']=new Date().toISOString()}catch(e){row['Calendar Deletion Pending']=true}}
+ db.deleted.push(row);db.projects=db.projects.filter(x=>x.id!==p.id);currentProjectId=null;$('projectModal').classList.remove('open');scheduleSave();render();toast('Project moved to Deleted');
+ if(row['Calendar Deletion Pending'])alert('Project deleted. Calendar cancellation is queued for the next Google Calendar connection.');
 }
 
 
@@ -1384,6 +1485,7 @@ async function connectGoogleCalendar(){
  try{
    clearGoogleTokenSession();
    await requestGoogleToken(false);
+   await processPendingCalendarDeletions();
    toast('Google Calendar connected');render();
  }catch(e){
    console.error(e);
@@ -1408,6 +1510,16 @@ function validateSchedule(p){
  if(s.start===s.end&&s.endTime<=s.time)return 'End time must be after start time.';return '';
 }
 function calendarDateTime(date,time){return `${date}T${normalizeTimeInput(time)}:00`}
+function scheduleInterval(p){const s=p.schedule||{};return {start:`${s.start}T${normalizeTimeInput(s.time)}`,end:`${s.end||s.start}T${normalizeTimeInput(s.endTime)}`}}
+function intervalsOverlap(a,b){return a.start<b.end&&b.start<a.end}
+function amsterdamWallTime(iso){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:GOOGLE_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso)),o={};parts.forEach(x=>o[x.type]=x.value);return `${o.year}-${o.month}-${o.day}T${o.hour}:${o.minute}`}
+function googleEventInterval(ev){if(ev?.start?.date&&ev?.end?.date)return {start:`${ev.start.date}T00:00`,end:`${ev.end.date}T00:00`};if(ev?.start?.dateTime&&ev?.end?.dateTime)return {start:amsterdamWallTime(ev.start.dateTime),end:amsterdamWallTime(ev.end.dateTime)};return null}
+async function scheduleConflicts(p){const target=scheduleInterval(p),out=[];for(const o of db.projects){if(o.id===p.id||!o.schedule?.start||!normalizeTimeInput(o.schedule?.time)||!normalizeTimeInput(o.schedule?.endTime))continue;if(intervalsOverlap(target,scheduleInterval(o)))out.push(`Renoweet: ${o.title||o.id} (${scheduleTimeLabel(o)})`)}const q=`/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events?singleEvents=true&orderBy=startTime&timeMin=${encodeURIComponent((p.schedule.start+'T00:00:00Z'))}&timeMax=${encodeURIComponent(((p.schedule.end||p.schedule.start)+'T23:59:59Z'))}&maxResults=250`;const data=await calendarFetch(q,{method:'GET'});for(const ev of data?.items||[]){if(ev.status==='cancelled'||ev.id===p.schedule.calendarEventId)continue;const gi=googleEventInterval(ev);if(gi&&intervalsOverlap(target,gi))out.push(`Calendar: ${ev.summary||'Busy event'}`)}return [...new Set(out)]}
+async function confirmScheduleAvailable(p){const c=await scheduleConflicts(p);if(!c.length)return true;return confirm(`This time is already occupied:
+
+${c.join('\n')}
+
+OK = override intentionally. Cancel = choose another time.`)}
 function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||'').trim())}
 function inviteStatusLabel(s){return ({accepted:'Accepted',declined:'Declined',tentative:'Tentative',needsAction:'Invited — awaiting response'})[s]||'Invitation sent'}
 function calendarEventBody(p){
@@ -1418,6 +1530,7 @@ function calendarEventBody(p){
 }
 function calendarShareSignature(p,body){return JSON.stringify({summary:body.summary,location:body.location,description:body.description,start:body.start,end:body.end,attendees:body.attendees||[]})}
 function eventPathWithUpdates(path,sendUpdates){return path+(path.includes('?')?'&':'?')+'sendUpdates='+encodeURIComponent(sendUpdates)}
+async function processPendingCalendarDeletions(){let changed=false;for(const r of db.deleted||[]){const id=String(r['Calendar Event ID']||'').trim(),pending=r['Calendar Deletion Pending']===true||String(r['Calendar Deletion Pending']).toLowerCase()==='true';if(!id||!pending)continue;try{await calendarFetch(eventPathWithUpdates(`/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID)}/events/${encodeURIComponent(id)}`,r['Calendar Shared With']?'all':'none'),{method:'DELETE'});r['Calendar Deletion Pending']=false;r['Calendar Deleted At']=new Date().toISOString();changed=true}catch(e){if(/404|not found/i.test(String(e.message||e))){r['Calendar Deletion Pending']=false;r['Calendar Deleted At']=new Date().toISOString();changed=true}}}if(changed)scheduleSave()}
 function updateInviteStateFromEvent(p,ev){
  const email=(p.schedule.inviteEmail||p.schedule.calendarSharedWith||'').trim().toLowerCase();
  const a=(ev?.attendees||[]).find(x=>String(x.email||'').toLowerCase()===email);
@@ -1432,6 +1545,7 @@ async function calendarFetch(path,options={}){
 }
 async function syncProjectCalendar(p){
  const err=validateSchedule(p);if(err)throw new Error(err);
+ if(!(await confirmScheduleAvailable(p)))throw new Error('Selected time is occupied.');
  const invite=(p.schedule.shareClient?String(p.schedule.inviteEmail||p.customer.email||'').trim():'');
  if(p.schedule.shareClient&&!validEmail(invite))throw new Error('Enter a valid client email before sharing the schedule.');
  p.schedule.inviteEmail=invite;
@@ -1511,6 +1625,8 @@ function sendToBookkeeping(){
    "Invoice date":p.invoice.date||today(),
    "Due date":dueDate,
    "Customer":p.customer.name||"",
+   "Phone":p.customer.phone||"",
+   "Email":p.customer.email||"",
    "Address":p.customer.address||"",
    "Project":p.title||"",
    "Description":description,
@@ -1520,7 +1636,8 @@ function sendToBookkeeping(){
    "Total incl VAT":+t.total.toFixed(2),
    "Status":"Ready for bookkeeping",
    "Sent at":new Date().toISOString(),
-   "Project ID":p.id||""
+   "Project ID":p.id||"",
+   "Source database":activeDbName||fileHandle?.name||""
  };
 
  if(!db.bookkeeping)db.bookkeeping=[];
@@ -1543,18 +1660,20 @@ if(pinInput)pinInput.addEventListener("keydown",e=>{if(e.key==="Enter")handlePin
 initPinLock();
 
 $('deleteProjectBtn').onclick=moveCurrentProjectToDeleted;
-$('newProjectBtn').onclick=()=>{let p=blankProject();db.projects.unshift(p);scheduleSave();openProject(p.id)}
-$('saveProjectBtn').onclick=()=>{saveProjectFromForm(true);closeProject()}
+$('newProjectBtn').onclick=startNewProject
+$('saveProjectBtn').onclick=saveProjectAndClose
 $('closeModalBtn').onclick=closeProject;
 $('quickSearchBtn').onclick=()=>{$('searchModal').classList.add('open');$('globalSearch').value='';$('globalSearch').focus();renderSearch('')}
 $('globalSearch').oninput=e=>renderSearch(e.target.value);
 $('connectBtn').onclick=connectWorkbook;$('resetXlsxBtn').onclick=resetXlsxConnection;$('eraseLocalCacheBtn').onclick=eraseLocalCache;$('saveNowBtn').onclick=()=>saveWorkbook(true);
+window.addEventListener('beforeunload',e=>{if(formDirty){e.preventDefault();e.returnValue=''}});
 
 (async()=>{
  // Restore the still-valid Google Calendar access token after a page refresh.
  // sessionStorage survives reloads in the same browser tab but avoids keeping a bearer token permanently.
  restoreGoogleTokenSession();
- render();dbState(false,'Not connected','Choose Renoweet_OS_Database.xlsx from your OneDrive folder.');
+ try{let ph=await rememberedPhotosFolder();if(ph&&await verifyPermission(ph,false))photosFolderHandle=ph}catch(e){}
+ render();dbState(false,'Not connected',activeDbName?`Last database on this device: ${activeDbName}. Connect that file or choose another quarterly XLSX.`:'Choose your quarterly Renoweet OS XLSX from OneDrive.');
  await restoreBrowserCache();
  if(!('showOpenFilePicker' in window)){
   if(restoredLocalCache)dbState(false,'Local copy restored','Your data is available on this device. Reconnect XLSX on a supported browser/device to write changes to OneDrive.');
@@ -1564,7 +1683,9 @@ $('connectBtn').onclick=connectWorkbook;$('resetXlsxBtn').onclick=resetXlsxConne
  try{
   let h=await rememberedHandle();
   if(h&&await verifyPermission(h,false)){
-   if(restoredLocalCache&&localCacheDirty){
+   if(activeDbName&&h.name&&h.name.toLowerCase()!==activeDbName.toLowerCase()){
+    dbState(false,'Database selection required',`Cached database is ${activeDbName}, while the remembered file is ${h.name}. Tap Connect XLSX and choose the quarter you want. Nothing will be merged between them.`);
+   }else if(restoredLocalCache&&localCacheDirty){
     // Do not auto-load the XLSX over unsynced local work after a refresh.
     dbState(false,'Unsynced local changes','Your changes are safe. Tap Connect XLSX when ready; Renoweet will keep these changes and sync them into OneDrive.');
    }else await loadWorkbook(h,false);
