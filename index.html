@@ -120,8 +120,8 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
 .ros-inv-title-row h1{font-size:12.5pt;line-height:1.15;margin:0;font-weight:800;white-space:nowrap}
 .ros-inv-dates{font-size:9.2pt;line-height:1.4;text-align:left;white-space:nowrap;margin:0}
 .ros-inv-table{width:100%;min-width:0!important;max-width:100%;border-collapse:collapse;font-size:11pt;background:#fff;table-layout:fixed;box-sizing:border-box}
-.ros-inv-table th{position:static;background:#fff;color:#111;border-bottom:1.5px solid #111;padding:2mm 2mm 1.5mm;font-weight:700}
-.ros-inv-table td{border:0;padding:2.2mm 2mm;vertical-align:top;white-space:normal;background:#fff}
+.ros-inv-table th{position:static;background:#fff;color:#111;border-bottom:1.5px solid #111;padding:2mm 1.5mm 1.5mm;font-weight:700;min-width:0!important;max-width:none!important;overflow:hidden;box-sizing:border-box}
+.ros-inv-table td{border:0;padding:2.2mm 1.5mm;vertical-align:top;white-space:normal;background:#fff;min-width:0!important;max-width:none!important;overflow:hidden;overflow-wrap:anywhere;box-sizing:border-box}
 .ros-inv-table .desc{width:54%;line-height:1.5}
 .ros-inv-table .amt{width:16%;text-align:right;white-space:nowrap}
 .ros-inv-table .qty{width:8%;text-align:center;white-space:nowrap}
@@ -159,13 +159,91 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
   .ros-inv-table th.tot,.ros-inv-table td.tot{padding-right:3mm!important;white-space:nowrap!important;overflow:visible!important}
 
   .ros-inv-accept{
-    position:fixed!important;left:16mm!important;right:16mm!important;bottom:7mm!important;
+    position:absolute!important;left:16mm!important;right:16mm!important;bottom:7mm!important;
     margin:0!important;padding-top:2mm!important;background:#fff!important;font-size:9pt!important;
     line-height:1.25!important;z-index:999!important;
   }
 }
 
 
+/* --- Renoweet quotation / price-offer print style --- */
+.ros-quote-preview{width:210mm;max-width:100%;margin:0 auto;background:#fff;color:#142d35;box-sizing:border-box;box-shadow:0 10px 30px #0001;font-family:Arial,Helvetica,sans-serif}
+.ros-quote-page{width:210mm;min-height:297mm;height:297mm;padding:14mm 16mm 13mm;box-sizing:border-box;position:relative;background:#fff;overflow:hidden;page-break-after:always;break-after:page}
+.ros-quote-content{width:100%;max-width:178mm;margin:0 auto;box-sizing:border-box;overflow:visible}
+.ros-quote-page:last-child{page-break-after:auto;break-after:auto}
+.ros-quote-table{width:100%!important;min-width:0!important;max-width:100%!important;border-collapse:collapse;border-spacing:0;table-layout:fixed;font-size:10.5pt;background:#fff;color:#142d35;margin:0 auto;box-sizing:border-box}
+.ros-quote-table th{background:#eaf0ef!important;color:#142d35!important;border-top:1px solid #9eafb2;border-bottom:1px solid #9eafb2;padding:2.4mm 2mm;font-weight:700;box-sizing:border-box;min-width:0!important;overflow:hidden}
+.ros-quote-table td{background:#fff!important;color:#142d35!important;border-bottom:1px solid #d7dfe0;padding:2.5mm 2mm;vertical-align:top;box-sizing:border-box;overflow-wrap:anywhere;min-width:0!important;overflow:hidden}
+.ros-quote-table .qd{text-align:left}.ros-quote-table .qq{text-align:center}.ros-quote-table .qr{text-align:right;white-space:nowrap}.ros-quote-table .qa{text-align:right;white-space:nowrap}
+.ros-quote-summary{width:82mm;max-width:48%;margin:5mm 0 0 auto;font-size:10.5pt;color:#142d35}
+.ros-quote-summary-row{display:flex;justify-content:space-between;gap:8mm;padding:1.7mm 0;border-bottom:1px dotted #aeb9bb}.ros-quote-summary-row strong{white-space:nowrap}.ros-quote-summary-row.grand{font-size:12pt;border-top:1.5px solid #173a43;border-bottom:1.5px solid #173a43;margin-top:1mm;padding:2.3mm 0}
+.ros-quote-note{margin-top:5mm;padding:3.5mm;background:#f3f7f6;border-radius:2mm;font-size:9.5pt;line-height:1.4}
+.ros-quote-footer{position:absolute;left:16mm;right:16mm;bottom:8mm;font-size:8.5pt;color:#667;display:flex;justify-content:space-between}
+.ros-quote-costnote{font-size:9pt;line-height:1.4;margin-top:3mm;color:#334b52}
+@media(max-width:700px){.ros-quote-preview{width:210mm;transform-origin:top left;transform:scale(.48);margin:10px 0 -300mm 8px;box-shadow:none}}
+@media(max-width:430px){.ros-quote-preview{transform:scale(.43);margin-left:4px;margin-bottom:-338mm}}
+@page{size:A4 portrait;margin:0}
+@media print{
+  html,body{margin:0!important;padding:0!important;width:210mm!important;background:#fff!important}
+  body:has(.ros-quote-preview) *{visibility:hidden!important}
+  #projectModal:has(.ros-quote-preview),#projectModal:has(.ros-quote-preview) .modalbox,#projectTabContent:has(.ros-quote-preview),#projectTabContent .ros-quote-preview,#projectTabContent .ros-quote-preview *{visibility:visible!important}
+  #projectModal:has(.ros-quote-preview){display:block!important;position:static!important;background:#fff!important;padding:0!important;margin:0!important}
+  #projectModal:has(.ros-quote-preview) .modalbox{display:block!important;position:static!important;width:210mm!important;max-height:none!important;overflow:visible!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important}
+  #projectModal:has(.ros-quote-preview) .modalhead,#projectModal:has(.ros-quote-preview) #projectTabs,#projectTabContent:has(.ros-quote-preview)>.actions,#projectTabContent:has(.ros-quote-preview)>.card.no-print{display:none!important}
+  #projectTabContent .ros-quote-preview{position:static!important;margin:0!important;width:210mm!important;max-width:none!important;box-shadow:none!important;transform:none!important}
+  .ros-quote-page{width:210mm!important;max-width:210mm!important;height:297mm!important;min-height:297mm!important;margin:0!important;padding:14mm 16mm 13mm!important;page-break-after:always!important;break-after:page!important;box-sizing:border-box!important;overflow:hidden!important}
+  .ros-quote-content{width:178mm!important;max-width:178mm!important;margin:0 auto!important}
+  .ros-quote-table{width:100%!important;min-width:0!important;max-width:100%!important;margin:0!important;table-layout:fixed!important}
+  .ros-quote-page:last-child{page-break-after:auto!important}
+}
+
+
+
+/* --- Renoweet unified customer-document layout v6 --- */
+.ros-invoice-preview{width:210mm;max-width:100%;margin:0 auto;background:#fff;color:#142d35;box-sizing:border-box;box-shadow:0 10px 30px #0001;font-family:Arial,Helvetica,sans-serif}
+.ros-invoice-page{width:210mm;height:297mm;min-height:297mm;padding:14mm 16mm 13mm;box-sizing:border-box;position:relative;background:#fff;overflow:hidden}
+.ros-invoice-content{width:178mm;max-width:178mm;margin:0 auto;box-sizing:border-box;overflow:hidden}
+.ros-doc-header{display:flex;justify-content:space-between;gap:18mm;align-items:flex-start}
+.ros-doc-brand{max-width:112mm}.ros-doc-brandline{display:flex;align-items:flex-end;gap:3mm;margin-bottom:1.8mm}.ros-doc-brandline img{width:13mm!important;height:auto!important;display:block!important;margin:0!important;flex:0 0 auto;align-self:flex-end}.ros-doc-brandline h2{font-size:17pt;line-height:.86;margin:0 0 .4mm 0!important;color:#173a43;white-space:nowrap;align-self:flex-end}.ros-doc-brand p{font-size:8.8pt;line-height:1.42;margin:0;color:#334b52}
+.ros-doc-title{text-align:right;min-width:54mm}.ros-doc-title h1{font-size:21pt;line-height:1;margin:0 0 3mm;color:#173a43}.ros-doc-title div{font-size:9.4pt;line-height:1.45;color:#243b42}.ros-doc-title strong{font-weight:800}
+.ros-doc-rule{height:1px;background:#315860;margin:5mm 0 5mm}
+.ros-doc-party{display:grid;grid-template-columns:1fr 1fr;gap:18mm;margin-bottom:6mm}.ros-doc-kicker{font-size:8.4pt;letter-spacing:.08em;text-transform:uppercase;color:#6a7e83}.ros-doc-party strong{font-size:11pt}.ros-doc-party div{font-size:9.6pt;line-height:1.38}
+.ros-doc-section-title{font-size:13pt;font-weight:800;color:#173a43;margin:3mm 0 3mm}
+.ros-doc-table{display:table!important;width:100%!important;min-width:0!important;max-width:100%!important;border-collapse:collapse!important;border-spacing:0!important;table-layout:fixed!important;font-size:10pt!important;background:#fff!important;color:#142d35!important;margin:0!important;box-sizing:border-box!important}
+.ros-doc-table col:nth-child(1){width:52%!important}.ros-doc-table col:nth-child(2){width:12%!important}.ros-doc-table col:nth-child(3){width:17%!important}.ros-doc-table col:nth-child(4){width:19%!important}
+.ros-doc-table th,.ros-doc-table td{box-sizing:border-box!important;min-width:0!important;max-width:none!important;overflow:hidden!important}
+.ros-doc-table th{background:#eaf0ef!important;color:#142d35!important;border-top:1px solid #9eafb2!important;border-bottom:1px solid #9eafb2!important;padding:2.2mm 1.4mm!important;font-weight:700!important}
+.ros-doc-table td{background:#fff!important;color:#142d35!important;border-bottom:1px solid #d7dfe0!important;padding:2.3mm 1.4mm!important;vertical-align:top!important;overflow-wrap:anywhere!important}
+.ros-doc-table .d{text-align:left!important}.ros-doc-table .q{text-align:center!important}.ros-doc-table .r,.ros-doc-table .a{text-align:right!important;white-space:nowrap!important}
+.ros-doc-summary{width:88mm;max-width:88mm;margin:5mm 0 0 auto;font-size:10.2pt;color:#142d35}.ros-doc-summary-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7mm;align-items:center;padding:1.65mm 0;border-bottom:1px dotted #aeb9bb}.ros-doc-summary-row .label{white-space:nowrap!important}.ros-doc-summary-row strong{white-space:nowrap!important;text-align:right}.ros-doc-summary-row.grand{font-size:12pt;font-weight:800;border-top:1.5px solid #173a43;border-bottom:1.5px solid #173a43;margin-top:1mm;padding:2.25mm 0}
+.ros-invoice-terms{margin-top:7mm;padding:3.6mm;background:#f3f7f6;border-radius:2mm;font-size:9.3pt;line-height:1.45;color:#334b52}.ros-invoice-terms p{margin:0 0 1.4mm}.ros-invoice-terms p:last-child{margin-bottom:0}
+.ros-invoice-footer{position:absolute;left:16mm;right:16mm;bottom:8mm;font-size:8.4pt;color:#667;display:flex;justify-content:space-between;gap:8mm}.ros-invoice-footer span:last-child{text-align:right;white-space:nowrap}
+@media(max-width:700px){.ros-invoice-preview{width:210mm;transform-origin:top left;transform:scale(.48);margin:10px 0 -151mm 8px;box-shadow:none}}
+@media(max-width:430px){.ros-invoice-preview{transform:scale(.43);margin-left:4px;margin-bottom:-169mm}}
+
+/* Temporary root used by the native browser print dialog. */
+.ros-print-root{display:none}
+@media print{
+  body.ros-native-printing{margin:0!important;padding:0!important;background:#fff!important}
+  body.ros-native-printing > *:not(.ros-print-root){display:none!important}
+  body.ros-native-printing > .ros-print-root{display:block!important;position:static!important;width:210mm!important;margin:0!important;padding:0!important;background:#fff!important}
+  body.ros-native-printing .ros-quote-preview,body.ros-native-printing .ros-invoice-preview{display:block!important;visibility:visible!important;transform:none!important;box-shadow:none!important;margin:0!important;width:210mm!important;max-width:210mm!important}
+  body.ros-native-printing .ros-quote-preview *,body.ros-native-printing .ros-invoice-preview *{visibility:visible!important}
+  body.ros-native-printing .ros-quote-page,body.ros-native-printing .ros-invoice-page{width:210mm!important;max-width:210mm!important;height:297mm!important;min-height:297mm!important;margin:0!important;box-sizing:border-box!important;overflow:hidden!important}
+  body.ros-native-printing .ros-quote-content,body.ros-native-printing .ros-invoice-content{width:178mm!important;max-width:178mm!important;min-width:0!important;margin:0 auto!important;overflow:hidden!important}
+  body.ros-native-printing .ros-quote-table,body.ros-native-printing .ros-doc-table{width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed!important;margin:0!important}
+  body.ros-native-printing .ros-quote-page{page-break-after:always!important;break-after:page!important}
+  body.ros-native-printing .ros-quote-page:last-child{page-break-after:auto!important;break-after:auto!important}
+  body.ros-native-printing .ros-invoice-page{page-break-after:auto!important;break-after:auto!important}
+}
+
+
+/* v7 document geometry hardening */
+.ros-quote-preview,.ros-invoice-preview{margin-left:auto!important;margin-right:auto!important;overflow:visible!important}
+.ros-quote-page,.ros-invoice-page{margin:0!important}
+.ros-quote-content,.ros-invoice-content{width:178mm!important;max-width:178mm!important;min-width:178mm!important;margin-left:auto!important;margin-right:auto!important;box-sizing:border-box!important}
+.ros-quote-table,.ros-doc-table{width:178mm!important;max-width:178mm!important;min-width:0!important;table-layout:fixed!important}
+.ros-doc-summary-row .label,.ros-quote-summary-row span:first-child{white-space:nowrap!important}
 /* --- Renoweet Planning + Google Calendar --- */
 .plan-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .plan-toolbar .spacer{margin-left:auto}
@@ -186,6 +264,13 @@ hr{border:0;border-top:1px solid var(--line);margin:16px 0}
 .google-setup h3{margin:0 0 7px}.google-setup p{margin:0 0 10px;color:var(--muted);font-size:13px;line-height:1.45}
 @media(max-width:900px){.plan-grid{grid-template-columns:repeat(7,78vw)}.plan-list-row{grid-template-columns:1fr}.plan-list-row .actions{width:100%}.plan-list-row .actions .btn{flex:1}}
 
+
+/* v8 document geometry hardening */
+.ros-doc-brandline{justify-content:flex-start!important;align-items:flex-end!important}
+.ros-doc-brandline img,.ros-doc-brandline h2{vertical-align:bottom!important}
+.ros-invoice-page>.ros-invoice-content,.ros-quote-page>.ros-quote-content{margin-left:0!important;margin-right:0!important}
+.ros-doc-table{width:100%!important;max-width:100%!important;min-width:0!important;table-layout:fixed!important}
+.ros-doc-summary-row .label{white-space:nowrap!important}
 </style>
 </head>
 <body>
@@ -391,8 +476,8 @@ const fmtDate=s=>{if(!s)return '';try{let d=String(s).includes('T')?new Date(s):
 function uid(){const d=new Date(),ts=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0')+String(d.getMilliseconds()).padStart(3,'0');const r=(crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,8):Math.random().toString(36).slice(2,10)).toUpperCase();return `P${ts}-${r}`}
 function lineid(){return Math.random().toString(36).slice(2,10).toUpperCase()}
 function toast(msg='Saved'){let t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1500)}
-function blankProject(){return {id:uid(),created:today(),updated:nowStamp(),stage:'Lead',customer:{name:'',phone:'',email:'',address:''},title:'',description:'',scope:'',notes:'',estimate:[{id:lineid(),desc:'Arbeid',qty:1,unit:'uur',rate:62.5}],materials:[],documents:[],payments:[],purchaseOrders:[],activity:[],followUps:[],acceptance:{status:'Pending',date:'',notes:''},schedule:{start:'',end:'',time:'',notes:'',shareClient:false,inviteEmail:'',inviteStatus:'',calendarSharedWith:'',calendarShareSignature:''},quote:{number:'',date:today(),validDays:14,vat:21,status:'Draft',parking:0,travel:0,exclusions:'Niet inbegrepen tenzij expliciet vermeld:\n- Vergunningen, constructieberekeningen en werkzaamheden van derden.\n- Verborgen gebreken, asbest of niet-zichtbare leidingen/constructies.\n- Herstelwerk buiten de omschreven scope.',paymentTerms:'Facturen zijn betaalbaar binnen 14 dagen na factuurdatum. Eventuele aanbetaling of termijnbetalingen worden vóór uitvoering schriftelijk bevestigd.',assumptions:'Uitvoering op basis van zichtbare situatie en beschikbare informatie tijdens inspectie. Definitieve maten, materiaalkeuzes en bereikbaarheid worden vóór start bevestigd.'},invoice:{number:'',date:today(),dueDays:14,status:'Draft'},checklist:defaultChecklist.map((x,i)=>({order:i+1,text:x,done:false}))}}
-function projectTotals(p){let workSubtotal=(p.estimate||[]).reduce((s,x)=>s+(+x.qty||0)*(+x.rate||0),0),parking=+p.quote?.parking||0,travel=+p.quote?.travel||0,subtotal=workSubtotal+parking+travel,vat=subtotal*((+p.quote?.vat||21)/100);return{workSubtotal,parking,travel,subtotal,vat,total:subtotal+vat}}
+function blankProject(){return {id:uid(),created:today(),updated:nowStamp(),stage:'Lead',customer:{name:'',phone:'',email:'',address:''},title:'',description:'',scope:'',notes:'',estimate:[{id:lineid(),desc:'Arbeid',qty:1,unit:'uur',rate:62.5}],materials:[],documents:[],payments:[],purchaseOrders:[],activity:[],followUps:[],acceptance:{status:'Pending',date:'',notes:''},schedule:{start:'',end:'',time:'',notes:'',shareClient:false,inviteEmail:'',inviteStatus:'',calendarSharedWith:'',calendarShareSignature:''},quote:{number:'',date:today(),validDays:14,vat:21,status:'Draft',parking:0,travel:0,exclusions:'Niet inbegrepen tenzij expliciet vermeld:\n- Vergunningen, constructieberekeningen en werkzaamheden van derden.\n- Verborgen gebreken, asbest of niet-zichtbare leidingen/constructies.\n- Herstelwerk buiten de omschreven scope.',paymentTerms:'Na akkoord op deze offerte is een aanbetaling verschuldigd ter voorbereiding en uitvoering van de werkzaamheden volgens planning. Het resterende bedrag wordt betaald volgens de afgesproken termijn(en), met de eindbetaling bij oplevering. Betalingstermijnen en vervaldata zijn conform de offerte en gemaakte afspraken.',advancePct:50,installments:0,assumptions:'Uitvoering op basis van zichtbare situatie en beschikbare informatie tijdens inspectie. Definitieve maten, materiaalkeuzes en bereikbaarheid worden vóór start bevestigd.'},invoice:{number:'',date:today(),dueDays:3,status:'Draft'},checklist:defaultChecklist.map((x,i)=>({order:i+1,text:x,done:false}))}}
+function projectTotals(p){let workSubtotal=(p.estimate||[]).reduce((s,x)=>s+(+x.qty||0)*(+x.rate||0),0),parking=+p.quote?.parking||0,travel=+p.quote?.travel||0,taxableSubtotal=workSubtotal+travel,vat=taxableSubtotal*((+p.quote?.vat||21)/100),subtotal=taxableSubtotal,total=taxableSubtotal+vat+parking;return{workSubtotal,parking,travel,taxableSubtotal,subtotal,vat,total}}
 function stagePill(s){let c=s==='Completed'?'green':s==='In progress'?'blue':s==='Quoted'?'warn':'';return `<span class="pill ${c}">${esc(s)}</span>`}
 
 function openHandleDb(){return new Promise((resolve,reject)=>{let r=indexedDB.open(HANDLE_DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(HANDLE_STORE);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
@@ -677,6 +762,21 @@ function isXlsxReadTransientError(e){
  const m=String(e?.message||e||'').toLowerCase();
  return m.includes('unsupported zip')||m.includes('zip')||m.includes('central directory')||m.includes('unexpected end')||m.includes('invalid')||m.includes('corrupt');
 }
+function workbookCellText(wb,sheet,cell='A1'){
+ return String(wb?.Sheets?.[sheet]?.[cell]?.v??'').trim();
+}
+function detectRenoweetWorkbookType(wb){
+ const names=new Set(wb?.SheetNames||[]),settingsA1=workbookCellText(wb,'Settings','A1').toLowerCase();
+ const isOS=settingsA1==='renoweet os database'||(['Projects','Estimate','Materials','Checklist','Bookkeeping'].filter(n=>names.has(n)).length>=4);
+ const isBookkeeping=names.has('Invoices')&&names.has('Expenses')&&(names.has('Auto & Fuel')||names.has('Bookkeeping Control'));
+ if(isOS&&!isBookkeeping)return 'os';if(isBookkeeping&&!isOS)return 'bookkeeping';if(isOS&&isBookkeeping)return settingsA1==='renoweet os database'?'os':'bookkeeping';return 'unknown';
+}
+function assertRenoweetOSWorkbook(wb,fileName='selected file'){
+ const type=detectRenoweetWorkbookType(wb);
+ if(type==='os')return true;
+ if(type==='bookkeeping'){const e=new Error(`Wrong XLSX selected: “${fileName}” is a Renoweet Bookkeeping workbook, not a Renoweet OS database. Nothing was loaded, merged or changed.`);e.name='WrongWorkbookTypeError';throw e}
+ const e=new Error(`“${fileName}” does not look like a Renoweet OS database. Expected the Settings / Projects / Estimate database structure. Nothing was loaded, merged or changed.`);e.name='WrongWorkbookTypeError';throw e;
+}
 async function logicalFileSnapshotOnce(h){
  const file=await h.getFile();
  const bytes=await file.arrayBuffer();
@@ -689,6 +789,7 @@ async function logicalFileSnapshotOnce(h){
   if(isXlsxReadTransientError(e)){const x=new Error('The selected XLSX is still being prepared by OneDrive.');x.name='XlsxNotReadyError';x.cause=e;throw x}
   throw e;
  }
+ assertRenoweetOSWorkbook(wb,file.name||h.name||'selected file');
  const parsed=databaseFromWorkbook(wb);
  const signature=await sha256Text(JSON.stringify(canonicalizeForSignature(parsed)));
  return {file,workbook:wb,db:parsed,signature};
@@ -723,6 +824,11 @@ async function loadWorkbook(h,ask){
  let initial;
  try{initial=await logicalFileSnapshot(h)}catch(e){
   if(isStaleFileError(e)){await forgetRememberedHandle();fileHandle=null;dbState(false,'Reconnect XLSX','This device has a stale OneDrive file handle. Tap Connect XLSX and choose the current file again.');return false}
+  if(e?.name==='WrongWorkbookTypeError'){
+   dbState(false,'Wrong XLSX selected','Renoweet OS refused the file before loading or merging anything.');
+   alert(e.message);
+   return false;
+  }
   if(e?.name==='XlsxNotReadyError'){
    localCacheDirty=!!localCacheDirty;await cacheBrowserState(localCacheDirty);
    dbState(false,'XLSX not ready','OneDrive did not provide a complete XLSX. Your local Renoweet data was not overwritten. Wait a moment and reconnect the current file.');
@@ -810,8 +916,8 @@ function parseWorkbook(){
   followUps:follow.filter(x=>x['Project ID']===r['Project ID']).map(x=>({id:x['Follow-up ID']||lineid(),date:x.Date||'',type:x.Type||'General',text:x.Text||'',done:String(x.Done).toLowerCase()==='true'||x.Done===true})),
   acceptance:{status:r['Acceptance Status']||'Pending',date:r['Acceptance Date']||'',notes:r['Acceptance Notes']||''},
   schedule:{start:r['Schedule Start']||'',end:r['Schedule End']||'',time:r['Schedule Time']||'',endTime:r['Schedule End Time']||'',notes:r['Schedule Notes']||'',shareClient:String(r['Share With Client']||'').toLowerCase()==='true'||r['Share With Client']===true,inviteEmail:r['Calendar Invite Email']||'',inviteStatus:r['Calendar Invite Status']||'',calendarSharedWith:r['Google Calendar Shared With']||'',calendarShareSignature:r['Google Calendar Share Signature']||'',calendarEventId:r['Google Calendar Event ID']||'',calendarHtmlLink:r['Google Calendar Link']||'',calendarSyncedAt:r['Google Calendar Synced At']||''},
-  quote:{number:r['Quote Number']||'',date:r['Quote Date']||today(),validDays:+r['Quote Valid Days']||14,vat:+r['Quote VAT']||21,status:r['Quote Status']||'Draft',parking:+r['Quote Parking']||0,travel:+r['Quote Travel']||0,exclusions:r['Quote Exclusions']||'Niet inbegrepen tenzij expliciet vermeld:\n- Vergunningen, constructieberekeningen en werkzaamheden van derden.\n- Verborgen gebreken, asbest of niet-zichtbare leidingen/constructies.\n- Herstelwerk buiten de omschreven scope.',paymentTerms:r['Quote Payment Terms']||'Facturen zijn betaalbaar binnen 14 dagen na factuurdatum. Eventuele aanbetaling of termijnbetalingen worden vóór uitvoering schriftelijk bevestigd.',assumptions:r['Quote Assumptions']||'Uitvoering op basis van zichtbare situatie en beschikbare informatie tijdens inspectie. Definitieve maten, materiaalkeuzes en bereikbaarheid worden vóór start bevestigd.'},
-  invoice:{number:r['Invoice Number']||'',date:r['Invoice Date']||today(),dueDays:+r['Invoice Due Days']||14,status:r['Invoice Status']||'Draft'},
+  quote:{number:r['Quote Number']||'',date:r['Quote Date']||today(),validDays:+r['Quote Valid Days']||14,vat:+r['Quote VAT']||21,status:r['Quote Status']||'Draft',parking:+r['Quote Parking']||0,travel:+r['Quote Travel']||0,exclusions:r['Quote Exclusions']||'Niet inbegrepen tenzij expliciet vermeld:\n- Vergunningen, constructieberekeningen en werkzaamheden van derden.\n- Verborgen gebreken, asbest of niet-zichtbare leidingen/constructies.\n- Herstelwerk buiten de omschreven scope.',paymentTerms:r['Quote Payment Terms']||'Na akkoord op deze offerte is een aanbetaling verschuldigd ter voorbereiding en uitvoering van de werkzaamheden volgens planning. Het resterende bedrag wordt betaald volgens de afgesproken termijn(en), met de eindbetaling bij oplevering. Betalingstermijnen en vervaldata zijn conform de offerte en gemaakte afspraken.',advancePct:+r['Quote Advance %']||50,installments:+r['Quote Installments']||0,assumptions:r['Quote Assumptions']||'Uitvoering op basis van zichtbare situatie en beschikbare informatie tijdens inspectie. Definitieve maten, materiaalkeuzes en bereikbaarheid worden vóór start bevestigd.'},
+  invoice:{number:r['Invoice Number']||'',date:r['Invoice Date']||today(),dueDays:(+r['Invoice Due Days']&&+r['Invoice Due Days']!==14)?+r['Invoice Due Days']:3,status:r['Invoice Status']||'Draft'},
   estimate:est.filter(x=>x['Project ID']===r['Project ID']).map(x=>({id:x['Line ID']||lineid(),desc:x.Description||'',qty:+x.Qty||0,unit:x.Unit||'',rate:+x.Rate||0})),
   materials:mats.filter(x=>x['Project ID']===r['Project ID']).map(x=>({id:x['Line ID']||lineid(),desc:x.Material||'',qty:x.Qty||'',supplier:x.Supplier||'',cost:+x.Cost||0})),
   checklist:checks.filter(x=>x['Project ID']===r['Project ID']).sort((a,b)=>(+a['Item Order']||0)-(+b['Item Order']||0)).map(x=>({order:+x['Item Order']||0,text:x.Item||'',done:String(x.Done).toLowerCase()==='true'||x.Done===true}))
@@ -823,7 +929,7 @@ function sheetFromRows(headers,dataRows){return XLSX.utils.json_to_sheet(dataRow
 function replaceDatabaseSheets(){
  if(!workbook)workbook=XLSX.utils.book_new();
  let projectHeaders=["Project ID","Created","Updated","Field Updated JSON","Stage","Title","Customer Name","Phone","Email","Address","Description","Scope","Notes","Schedule Start","Schedule End","Schedule Time","Schedule End Time","Schedule Notes","Share With Client","Calendar Invite Email","Calendar Invite Status","Google Calendar Shared With","Google Calendar Share Signature","Google Calendar Event ID","Google Calendar Link","Google Calendar Synced At","Quote Number","Quote Date","Quote Valid Days","Quote VAT","Quote Status","Quote Parking","Quote Travel","Quote Exclusions","Quote Payment Terms","Quote Assumptions","Invoice Number","Invoice Date","Invoice Due Days","Invoice Status","Acceptance Status","Acceptance Date","Acceptance Notes"];
- let projectRows=db.projects.map(p=>({"Project ID":p.id,Created:p.created,Updated:p.updated,"Field Updated JSON":JSON.stringify(p.fieldUpdated||{}),Stage:p.stage,Title:p.title,"Customer Name":p.customer.name,Phone:p.customer.phone,Email:p.customer.email,Address:p.customer.address,Description:p.description,Scope:p.scope,Notes:p.notes,"Schedule Start":p.schedule.start,"Schedule End":p.schedule.end,"Schedule Time":p.schedule.time,"Schedule End Time":p.schedule.endTime||"","Schedule Notes":p.schedule.notes,"Share With Client":!!p.schedule.shareClient,"Calendar Invite Email":p.schedule.inviteEmail||"","Calendar Invite Status":p.schedule.inviteStatus||"","Google Calendar Shared With":p.schedule.calendarSharedWith||"","Google Calendar Share Signature":p.schedule.calendarShareSignature||"","Google Calendar Event ID":p.schedule.calendarEventId||"","Google Calendar Link":p.schedule.calendarHtmlLink||"","Google Calendar Synced At":p.schedule.calendarSyncedAt||"","Quote Number":p.quote.number,"Quote Date":p.quote.date,"Quote Valid Days":p.quote.validDays,"Quote VAT":p.quote.vat,"Quote Status":p.quote.status,"Quote Parking":+p.quote.parking||0,"Quote Travel":+p.quote.travel||0,"Quote Exclusions":p.quote.exclusions||"","Quote Payment Terms":p.quote.paymentTerms||"","Quote Assumptions":p.quote.assumptions||"","Invoice Number":p.invoice.number,"Invoice Date":p.invoice.date,"Invoice Due Days":p.invoice.dueDays,"Invoice Status":p.invoice.status,"Acceptance Status":p.acceptance?.status||"Pending","Acceptance Date":p.acceptance?.date||"","Acceptance Notes":p.acceptance?.notes||""}));
+ let projectRows=db.projects.map(p=>({"Project ID":p.id,Created:p.created,Updated:p.updated,"Field Updated JSON":JSON.stringify(p.fieldUpdated||{}),Stage:p.stage,Title:p.title,"Customer Name":p.customer.name,Phone:p.customer.phone,Email:p.customer.email,Address:p.customer.address,Description:p.description,Scope:p.scope,Notes:p.notes,"Schedule Start":p.schedule.start,"Schedule End":p.schedule.end,"Schedule Time":p.schedule.time,"Schedule End Time":p.schedule.endTime||"","Schedule Notes":p.schedule.notes,"Share With Client":!!p.schedule.shareClient,"Calendar Invite Email":p.schedule.inviteEmail||"","Calendar Invite Status":p.schedule.inviteStatus||"","Google Calendar Shared With":p.schedule.calendarSharedWith||"","Google Calendar Share Signature":p.schedule.calendarShareSignature||"","Google Calendar Event ID":p.schedule.calendarEventId||"","Google Calendar Link":p.schedule.calendarHtmlLink||"","Google Calendar Synced At":p.schedule.calendarSyncedAt||"","Quote Number":p.quote.number,"Quote Date":p.quote.date,"Quote Valid Days":p.quote.validDays,"Quote VAT":p.quote.vat,"Quote Status":p.quote.status,"Quote Parking":+p.quote.parking||0,"Quote Travel":+p.quote.travel||0,"Quote Exclusions":p.quote.exclusions||"","Quote Payment Terms":p.quote.paymentTerms||"","Quote Advance %":+p.quote.advancePct||50,"Quote Installments":+p.quote.installments||0,"Quote Assumptions":p.quote.assumptions||"","Invoice Number":p.invoice.number,"Invoice Date":p.invoice.date,"Invoice Due Days":p.invoice.dueDays,"Invoice Status":p.invoice.status,"Acceptance Status":p.acceptance?.status||"Pending","Acceptance Date":p.acceptance?.date||"","Acceptance Notes":p.acceptance?.notes||""}));
  let estRows=[],matRows=[],checkRows=[],docRows=[],paymentRows=[],orderRows=[],activityRows=[],followRows=[];
  db.projects.forEach(p=>{
   (p.estimate||[]).forEach((x,i)=>estRows.push({"Project ID":p.id,"Line ID":x.id||lineid(),Description:x.desc,Qty:+x.qty||0,Unit:x.unit,Rate:+x.rate||0}));
@@ -1014,42 +1120,80 @@ function tabHTML(p,t){
  if(t==='invoice')return invoiceHTML(p);
  if(t==='checklist')return `<div class="checklist">${p.checklist.map((x,i)=>`<label><input type="checkbox" class="c_done" data-i="${i}" ${x.done?'checked':''}><span>${esc(x.text)}</span></label>`).join('')}</div><div class="actions" style="margin-top:12px"><button class="btn" onclick="addChecklist()">+ Item</button><button class="btn primary" onclick="completeProject()">Mark completed</button></div>`;
 }
-function totalsHTML(p){let t=projectTotals(p);return `<div class="totalbox"><div class="totalrow"><span>Werkzaamheden</span><b>${money(t.workSubtotal)}</b></div>${t.parking?`<div class="totalrow"><span>Parkeerkosten</span><b>${money(t.parking)}</b></div>`:''}${t.travel?`<div class="totalrow"><span>Reiskosten</span><b>${money(t.travel)}</b></div>`:''}<div class="totalrow"><span>Subtotaal excl. btw</span><b>${money(t.subtotal)}</b></div><div class="totalrow"><span>BTW (${p.quote.vat}%)</span><b>${money(t.vat)}</b></div><div class="totalrow"><span>Totaal incl. btw</span><b>${money(t.total)}</b></div></div>`}
+function totalsHTML(p){let t=projectTotals(p);return `<div class="totalbox"><div class="totalrow"><span>Werkzaamheden</span><b>${money(t.workSubtotal)}</b></div>${t.travel?`<div class="totalrow"><span>Reiskosten</span><b>${money(t.travel)}</b></div>`:''}<div class="totalrow"><span>Subtotaal excl. btw</span><b>${money(t.taxableSubtotal)}</b></div><div class="totalrow"><span>BTW (${p.quote.vat}%)</span><b>${money(t.vat)}</b></div>${t.parking?`<div class="totalrow"><span>Voorgeschoten parkeerkosten*</span><b>${money(t.parking)}</b></div>`:''}<div class="totalrow"><span>Totaal</span><b>${money(t.total)}</b></div></div>`}
 function quoteHTML(p){
+ if(!p.quote.advancePct)p.quote.advancePct=50;if(p.quote.installments==null)p.quote.installments=0;if((p.quote.paymentTerms||'').includes('14 dagen na factuurdatum'))p.quote.paymentTerms=buildPaymentTermsText(p.quote.advancePct,p.quote.installments);
  if(!p.quote.number)p.quote.number=nextQuote();
  if(!p.quote.date)p.quote.date=today();
  let t=projectTotals(p), valid=new Date(p.quote.date+'T12:00:00');valid.setDate(valid.getDate()+(+p.quote.validDays||14));let validDate=valid.toISOString().slice(0,10);
- const rows=(p.estimate||[]).map(x=>`<tr><td>${esc(x.desc)}</td><td>${x.qty} ${esc(x.unit)}</td><td class="money">${money(x.rate)}</td><td class="money">${money(x.qty*x.rate)}</td></tr>`).join('');
- return `<div class="card no-print" style="margin-bottom:12px"><div class="formgrid"><div class="field"><label>Offertenummer</label><input id="q_number" value="${esc(p.quote.number)}"></div><div class="field"><label>Offertedatum</label><input id="q_date" type="date" value="${p.quote.date}"></div><div class="field"><label>Geldig (dagen)</label><input id="q_valid" type="number" min="1" value="${+p.quote.validDays||14}"></div><div class="field"><label>BTW %</label><input value="${p.quote.vat}" disabled></div><div class="field"><label>Parkeerkosten (€)</label><input id="q_parking" type="number" min="0" step="0.01" value="${+p.quote.parking||0}"></div><div class="field"><label>Reiskosten (€)</label><input id="q_travel" type="number" min="0" step="0.01" value="${+p.quote.travel||0}"></div><div class="field full"><label>Uitgangspunten</label><textarea id="q_assumptions">${esc(p.quote.assumptions||'')}</textarea></div><div class="field full"><label>Uitsluitingen</label><textarea id="q_exclusions">${esc(p.quote.exclusions||'')}</textarea></div><div class="field full"><label>Betalingsvoorwaarden</label><textarea id="q_payment_terms">${esc(p.quote.paymentTerms||'')}</textarea></div></div><div class="small" style="margin-top:8px">Parkeer- en reiskosten worden in deze offerte meegenomen in de btw-grondslag. Zie fiscale opmerking bij deze OS-versie.</div></div>
- <div class="ros-quote-preview" style="width:210mm;max-width:100%;margin:auto;background:#fff;color:#142d35;padding:14mm;box-sizing:border-box;box-shadow:0 10px 30px #0001;font-family:Arial,sans-serif">
-  <section style="min-height:267mm;box-sizing:border-box;position:relative">
-   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start"><div><img src="data:image/png;base64,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" style="width:72px"><h2 style="margin:5px 0 2px">Renoweet</h2><div style="font-size:12px;line-height:1.55">Renovatie • Timmerwerk • Technische oplossingen<br>Hiridostraat 2c65, 1101 CW Amsterdam<br>KVK 97746312 • BTW NL005285311B07<br>06 43865003 • renoweet@hotmail.com<br><b>www.renoweet.nl</b></div></div><div style="text-align:right"><h1 style="margin:0 0 10px;font-size:28px">OFFERTE</h1><div><b>Offertenr.</b> ${esc(p.quote.number)}</div><div><b>Datum</b> ${fmtDate(p.quote.date)}</div><div><b>Geldig t/m</b> ${fmtDate(validDate)}</div></div></div>
-   <hr style="margin:18px 0;border:0;border-top:2px solid #173a43"><div style="display:grid;grid-template-columns:1fr 1fr;gap:24px"><div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#61777d">Aan</div><b>${esc(p.customer.name||'')}</b><div>${esc(p.customer.address||'')}</div><div>${esc(p.customer.email||'')}</div><div>${esc(p.customer.phone||'')}</div></div><div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#61777d">Project</div><b>${esc(p.title||'Renovatieproject')}</b><div>Project ID: ${esc(p.id)}</div></div></div>
-   <h3 style="margin-top:24px">Prijsaanbieding</h3><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid #aaa"><th style="text-align:left;padding:7px 4px">Omschrijving</th><th style="text-align:left">Aantal</th><th style="text-align:right">Tarief</th><th style="text-align:right">Bedrag</th></tr></thead><tbody>${rows}</tbody></table>
-   ${t.parking?`<div class="totalrow"><span>Parkeerkosten</span><b>${money(t.parking)}</b></div>`:''}${t.travel?`<div class="totalrow"><span>Reiskosten</span><b>${money(t.travel)}</b></div>`:''}
-   <div style="margin:16px 0 0 auto;max-width:320px">${totalsHTML(p)}</div>
-   <div style="margin-top:20px;padding:12px;background:#f3f7f6;border-radius:8px;font-size:12px"><b>Prijsaanbieding</b><br>Deze offerte is een prijsaanbieding op basis van de hieronder omschreven scope en uitgangspunten. Wijzigingen of meerwerk worden vooraf besproken en afzonderlijk bevestigd.</div>
-   <div style="position:absolute;bottom:0;left:0;right:0;font-size:10px;color:#667">Renoweet • Slim en Duurzaam. Voor elke klus. <span style="float:right">Pagina 1 / 2</span></div>
+ const rows=(p.estimate||[]).map(x=>`<tr><td class="qd">${esc(x.desc)}</td><td class="qq">${x.qty} ${esc(x.unit)}</td><td class="qr">${money(x.rate)}</td><td class="qa">${money(x.qty*x.rate)}</td></tr>`).join('');
+ return `<div class="card no-print" style="margin-bottom:12px"><div class="formgrid"><div class="field"><label>Offertenummer</label><input id="q_number" value="${esc(p.quote.number)}"></div><div class="field"><label>Offertedatum</label><input id="q_date" type="date" value="${p.quote.date}"></div><div class="field"><label>Geldig (dagen)</label><input id="q_valid" type="number" min="1" value="${+p.quote.validDays||14}"></div><div class="field"><label>BTW %</label><input value="${p.quote.vat}" disabled></div><div class="field"><label>Parkeren voorgeschoten voor klant (€)</label><input id="q_parking" type="number" min="0" step="0.01" value="${+p.quote.parking||0}"></div><div class="field"><label>Reiskosten (€)</label><input id="q_travel" type="number" min="0" step="0.01" value="${+p.quote.travel||0}"></div><div class="field full"><label>Uitgangspunten</label><textarea id="q_assumptions">${esc(p.quote.assumptions||'')}</textarea></div><div class="field full"><label>Uitsluitingen</label><textarea id="q_exclusions">${esc(p.quote.exclusions||'')}</textarea></div><div class="field"><label>Aanbetaling na akkoord (%)</label><input id="q_advance_pct" type="number" min="0" max="100" step="1" value="${+p.quote.advancePct||50}" onchange="refreshPaymentTermsTemplate()"></div><div class="field"><label>Tussenbetalingen vóór eindbetaling</label><input id="q_installments" type="number" min="0" max="10" step="1" value="${+p.quote.installments||0}" onchange="refreshPaymentTermsTemplate()"></div><div class="field full"><label>Betalingsvoorwaarden</label><textarea id="q_payment_terms">${esc(p.quote.paymentTerms||'')}</textarea><div class="small">Aanbetaling is verschuldigd zodra de offerte is goedgekeurd. Pas de tekst hieronder aan wanneer bedragen/mijlpalen projectspecifiek zijn.</div></div></div><div class="small" style="margin-top:8px">Parkeren en reiskosten kunnen per project apart worden toegevoegd. Reiskosten worden in de btw-grondslag opgenomen.</div></div>
+ <div class="ros-quote-preview">
+  <section class="ros-quote-page" data-quote-page="1">
+   <div class="ros-quote-content"><div style="display:flex;justify-content:space-between;gap:18mm;align-items:flex-start"><div class="ros-doc-brand"><div class="ros-doc-brandline"><img src="${document.querySelector('.pin-logo')?.src||''}" alt="Renoweet"><h2>Renoweet</h2></div><p>Renovatie • Timmerwerk • Technische oplossingen<br>Hiridostraat 2c65, 1101 CW Amsterdam<br>KVK 97746312 • BTW NL005285311B07<br>06 43865003 • renoweet@hotmail.com<br><b>www.renoweet.nl</b></p></div><div style="text-align:right;min-width:60mm"><h1 style="margin:0 0 3mm;font-size:23pt">OFFERTE</h1><div style="font-size:10pt;line-height:1.5"><b>Offertenr.</b> ${esc(p.quote.number)}<br><b>Datum</b> ${fmtDate(p.quote.date)}<br><b>Geldig t/m</b> ${fmtDate(validDate)}</div></div></div>
+   <hr style="margin:6mm 0 5mm;border:0;border-top:1.5px solid #173a43"><div style="display:grid;grid-template-columns:1fr 1fr;gap:14mm;font-size:10pt;line-height:1.4"><div><div style="font-size:8.5pt;text-transform:uppercase;letter-spacing:.08em;color:#61777d">Aan</div><b>${esc(p.customer.name||'')}</b><div>${esc(p.customer.address||'')}</div><div>${esc(p.customer.email||'')}</div><div>${esc(p.customer.phone||'')}</div></div><div><div style="font-size:8.5pt;text-transform:uppercase;letter-spacing:.08em;color:#61777d">Project</div><b>${esc(p.title||'Renovatieproject')}</b><div>Project ID: ${esc(p.id)}</div></div></div>
+   <h3 style="margin:7mm 0 3mm;font-size:13pt">Prijsaanbieding</h3><table class="ros-quote-table"><colgroup><col style="width:52%"><col style="width:12%"><col style="width:17%"><col style="width:19%"></colgroup><thead><tr><th class="qd">Omschrijving</th><th class="qq">Aantal</th><th class="qr">Tarief</th><th class="qa">Bedrag</th></tr></thead><tbody>${rows}</tbody></table>
+   <div class="ros-quote-summary"><div class="ros-quote-summary-row"><span>Werkzaamheden</span><strong>${money(t.workSubtotal)}</strong></div>${t.travel?`<div class="ros-quote-summary-row"><span>Reiskosten</span><strong>${money(t.travel)}</strong></div>`:''}<div class="ros-quote-summary-row"><span>Subtotaal excl. btw</span><strong>${money(t.taxableSubtotal)}</strong></div><div class="ros-quote-summary-row"><span>BTW (${p.quote.vat}%)</span><strong>${money(t.vat)}</strong></div>${t.parking?`<div class="ros-quote-summary-row"><span>Parkeerkosten</span><strong>${money(t.parking)}</strong></div>`:''}<div class="ros-quote-summary-row grand"><span>Totaal</span><strong>${money(t.total)}</strong></div></div>
+   <div class="ros-quote-note"><b>Prijsaanbieding</b><br>Deze offerte is een prijsaanbieding op basis van de scope, uitgangspunten en voorwaarden op pagina 2. Wijzigingen of meerwerk worden vooraf besproken en afzonderlijk bevestigd.</div>
+   </div><div class="ros-quote-footer"><span>Renoweet • Slim en Duurzaam. Voor elke klus.</span><span>Pagina 1 / 2</span></div>
   </section>
-  <section style="min-height:267mm;box-sizing:border-box;position:relative;page-break-before:always;padding-top:4mm">
-   <h2 style="margin-top:0">Scope & voorwaarden</h2><h3>Scope van werkzaamheden</h3><div style="white-space:pre-wrap;font-size:12px;line-height:1.55">${esc(p.scope||'Nog geen scope vastgelegd.')}</div>
-   <h3>Uitgangspunten</h3><div style="white-space:pre-wrap;font-size:12px;line-height:1.55">${esc(p.quote.assumptions||'')}</div>
-   <h3>Uitsluitingen</h3><div style="white-space:pre-wrap;font-size:12px;line-height:1.55">${esc(p.quote.exclusions||'')}</div>
-   <h3>Betaling</h3><div style="white-space:pre-wrap;font-size:12px;line-height:1.55">${esc(p.quote.paymentTerms||'')}</div>
-   <h3>Geldigheid & akkoord</h3><div style="font-size:12px;line-height:1.55">Deze offerte is ${+p.quote.validDays||14} dagen geldig vanaf de offertedatum. Akkoord kan schriftelijk per e-mail of WhatsApp worden bevestigd. Na akkoord plannen we de uitvoering in overleg.</div>
-   <h3>Algemene voorwaarden</h3><div style="font-size:12px;line-height:1.55">Op deze offerte en alle daaruit voortvloeiende werkzaamheden zijn de Algemene Voorwaarden van Renoweet van toepassing. Meer informatie over Renoweet: <b>www.renoweet.nl</b>.</div>
-   <div style="margin-top:22px;border-top:1px solid #bbb;padding-top:12px;font-size:11px">Renoweet • Hiridostraat 2c65, 1101 CW Amsterdam • KVK 97746312 • BTW NL005285311B07 • 06 43865003 • renoweet@hotmail.com • www.renoweet.nl</div>
-   <div style="position:absolute;bottom:0;left:0;right:0;font-size:10px;color:#667">Renoweet • Offerte ${esc(p.quote.number)} <span style="float:right">Pagina 2 / 2</span></div>
+  <section class="ros-quote-page" data-quote-page="2">
+   <div class="ros-quote-content"><h2 style="margin:0 0 5mm;font-size:18pt">Scope & voorwaarden</h2><h3 style="margin:0 0 2mm">Scope van werkzaamheden</h3><div style="white-space:pre-wrap;font-size:10pt;line-height:1.5">${esc(p.scope||'Nog geen scope vastgelegd.')}</div>
+   <h3 style="margin:5mm 0 2mm">Uitgangspunten</h3><div style="white-space:pre-wrap;font-size:10pt;line-height:1.5">${esc(p.quote.assumptions||'')}</div>
+   <h3 style="margin:5mm 0 2mm">Uitsluitingen</h3><div style="white-space:pre-wrap;font-size:10pt;line-height:1.5">${esc(p.quote.exclusions||'')}</div>
+   <h3 style="margin:5mm 0 2mm">Betaling</h3><div style="white-space:pre-wrap;font-size:10pt;line-height:1.5">${esc(p.quote.paymentTerms||'')}</div>
+   <h3 style="margin:5mm 0 2mm">Geldigheid & akkoord</h3><div style="font-size:10pt;line-height:1.5">Deze offerte is ${+p.quote.validDays||14} dagen geldig vanaf de offertedatum. Akkoord kan schriftelijk per e-mail of WhatsApp worden bevestigd. Na akkoord plannen we de uitvoering in overleg.</div>
+   <h3 style="margin:5mm 0 2mm">Algemene voorwaarden</h3><div style="font-size:10pt;line-height:1.5">Op deze offerte en alle daaruit voortvloeiende werkzaamheden zijn de Algemene Voorwaarden van Renoweet van toepassing. Zie ook <b>www.renoweet.nl</b>.</div>
+   <div style="margin-top:6mm;border-top:1px solid #bbb;padding-top:3mm;font-size:8.5pt;line-height:1.4">Renoweet • Hiridostraat 2c65, 1101 CW Amsterdam • KVK 97746312 • BTW NL005285311B07 • 06 43865003 • renoweet@hotmail.com • www.renoweet.nl</div>
+   </div><div class="ros-quote-footer"><span>Renoweet • Offerte ${esc(p.quote.number)}</span><span>Pagina 2 / 2</span></div>
   </section>
- </div><div class="actions no-print" style="margin-top:12px"><button class="btn primary" onclick="smartSendQuote()">Send quotation</button><button class="btn" onclick="markQuoteSent()">Mark sent</button><button class="btn" onclick="window.print()">Print / PDF</button></div>`
+ </div><div class="actions no-print" style="margin-top:12px"><button class="btn primary" onclick="smartSendQuote()">Send quotation</button><button class="btn" onclick="markQuoteSent()">Mark sent</button><button class="btn" onclick="printQuotationClean()">Print / PDF</button></div>`
 }
 
-async function makeRenoweetQuotePdfFile(){
- const quote=document.querySelector('.ros-quote-preview');if(!quote)throw new Error('Quotation preview not found.');
- const canvas=await html2canvas(quote,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false});
- const {jsPDF}=window.jspdf;const pdf=new jsPDF('p','mm','a4');const pageW=210,pageH=297,imgW=pageW;const imgH=canvas.height*imgW/canvas.width;const img=canvas.toDataURL('image/jpeg',0.95);let y=0;pdf.addImage(img,'JPEG',0,y,imgW,imgH,'FAST');let remaining=imgH-pageH;while(remaining>0){y-=pageH;pdf.addPage();pdf.addImage(img,'JPEG',0,y,imgW,imgH,'FAST');remaining-=pageH;}
- const p=getP(),nr=(p?.quote?.number||'offerte').trim();return new File([pdf.output('blob')],[`Renoweet_Offerte_${nr}.pdf`],{type:'application/pdf'})
+function buildPaymentTermsText(advancePct,installments){
+ advancePct=Math.max(0,Math.min(100,+advancePct||0));installments=Math.max(0,Math.floor(+installments||0));
+ const advance=advancePct?`Na akkoord op deze offerte is een aanbetaling van ${advancePct}% verschuldigd. Deze aanbetaling is nodig om de werkzaamheden voor te bereiden en de uitvoering volgens planning te kunnen starten.`:'Na akkoord op deze offerte wordt de uitvoering volgens afspraak voorbereid en ingepland.';
+ if(installments===0)return `${advance}\n\nHet resterende bedrag wordt als eindbetaling voldaan bij oplevering van de werkzaamheden. Betaling vindt plaats conform de in deze offerte en met opdrachtgever gemaakte afspraken; er geldt geen standaard betalingstermijn van 14 dagen.`;
+ const mid=installments===1?'één tussenbetaling':`${installments} tussenbetalingen`;
+ return `${advance}\n\nNa de aanbetaling volgen ${mid} volgens de afgesproken projectmijlpalen. Het resterende saldo wordt als eindbetaling voldaan bij oplevering. De bedragen, mijlpalen en betaalmomenten gelden zoals in de offerte en met opdrachtgever afgesproken; er geldt geen standaard betalingstermijn van 14 dagen.`;
 }
+function refreshPaymentTermsTemplate(){const a=$('q_advance_pct'),i=$('q_installments'),t=$('q_payment_terms');if(!a||!i||!t)return;t.value=buildPaymentTermsText(a.value,i.value);}
+async function renoweetDocumentPdf(previewSelector,pageSelector,fileName){
+ const source=document.querySelector(previewSelector);
+ if(!source)throw new Error('Document preview not found.');
+ if(typeof html2canvas!=='function'||!window.jspdf?.jsPDF)throw new Error('PDF libraries are not available. Check your internet connection and reload Renoweet OS.');
+ const stage=document.createElement('div');
+ stage.setAttribute('aria-hidden','true');
+ stage.style.cssText='position:absolute;left:0;top:0;width:210mm;max-width:210mm;margin:0!important;padding:0!important;border:0!important;background:#fff;z-index:-99999;visibility:visible;pointer-events:none;';
+ const clone=source.cloneNode(true);
+ clone.style.cssText='display:block;width:210mm;max-width:210mm;margin:0;padding:0;transform:none;box-shadow:none;background:#fff;';
+ clone.querySelectorAll(pageSelector).forEach(pg=>{pg.style.cssText += ';display:block;position:relative;left:0;top:0;width:210mm;max-width:210mm;min-width:210mm;height:297mm;min-height:297mm;max-height:297mm;margin:0!important;padding:14mm 16mm 13mm 16mm!important;border:0!important;box-sizing:border-box!important;transform:none!important;overflow:hidden!important;background:#fff!important;';const c=pg.querySelector('.ros-quote-content,.ros-invoice-content');if(c)c.style.cssText += ';display:block;width:178mm!important;max-width:178mm!important;min-width:178mm!important;margin:0!important;padding:0!important;box-sizing:border-box!important;transform:none!important;overflow:hidden!important;';});
+ stage.appendChild(clone);document.body.appendChild(stage);stage.style.top='-100000px';
+ try{
+  const imgs=[...clone.querySelectorAll('img')];
+  await Promise.all(imgs.map(img=>img.complete?Promise.resolve():new Promise(r=>{img.onload=img.onerror=r})));
+  if(document.fonts?.ready)await document.fonts.ready;
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const pages=[...clone.querySelectorAll(pageSelector)];
+  if(!pages.length)throw new Error('No printable pages found.');
+  const {jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+  for(let i=0;i<pages.length;i++){
+   const canvas=await html2canvas(pages[i],{scale:2,backgroundColor:'#ffffff',useCORS:true,allowTaint:false,logging:false,scrollX:0,scrollY:0,width:pages[i].clientWidth,height:pages[i].clientHeight,windowWidth:pages[i].clientWidth,windowHeight:pages[i].clientHeight});
+   if(i>0)pdf.addPage('a4','portrait');
+   const img=canvas.toDataURL('image/jpeg',0.96);
+   pdf.addImage(img,'JPEG',0,0,210,297,undefined,'FAST');
+  }
+  return new File([pdf.output('blob')],fileName,{type:'application/pdf'});
+ }finally{stage.remove();}
+}
+async function makeRenoweetQuotePdfFile(){
+ const p=getP();if(!p)throw new Error('Project not found.');
+ return renoweetDocumentPdf('.ros-quote-preview','.ros-quote-page',`Offerte-${(p.quote?.number||'offerte').trim()}.pdf`);
+}
+async function printQuotationClean(){
+ try{const p=getP();if(!p)return;saveProjectFromForm(false);renderTabs();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const file=await makeRenoweetQuotePdfFile();downloadInvoiceFile(file);toast('Quotation PDF downloaded. Open the PDF to print.');}catch(e){console.error(e);alert('Could not create the quotation PDF: '+(e?.message||e));}
+}
+
 function quoteShareMessage(p){return `Beste ${p?.customer?.name||'klant'},
 
 Hierbij ontvangt u onze offerte ${p?.quote?.number||''} voor ${p?.title||'uw project'}. De offerte bevat de prijsaanbieding, scope, uitgangspunten, uitsluitingen en betalingsvoorwaarden.
@@ -1069,141 +1213,50 @@ async function sendQuoteByEmail(){try{const p=getP();saveProjectFromForm(false);
 async function sendQuoteByWhatsApp(){try{const p=getP();saveProjectFromForm(false);const phone=normalizeWhatsAppNumber(p.customer.phone||'');if(!phone)return alert('No client WhatsApp/phone number is saved.');const file=await makeRenoweetQuotePdfFile();if(isMobileDevice()){const shared=await nativeShareQuote(file,p);if(shared){markQuoteSentAfterShare(p);toast('Choose WhatsApp and the client chat');return}}downloadInvoiceFile(file);window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(quoteShareMessage(p))}`,'_blank');markQuoteSentAfterShare(p);setTimeout(()=>alert(`The quotation PDF has been downloaded as "${file.name}". WhatsApp Web has opened the client chat. Attach the downloaded PDF and send it.`),350)}catch(e){if(e?.name==='AbortError')return;console.error(e);alert('Could not create/send the quotation PDF: '+(e?.message||e))}}
 
 function invoiceHTML(p){
- let t=projectTotals(p);
+ if(!p.invoice)p.invoice={};
  if(!p.invoice.number)p.invoice.number=nextInvoice();
  if(!p.invoice.date)p.invoice.date=today();
- let invoiceNumber=p.invoice.number;
- let invoiceDate=p.invoice.date||today();
- let dueDate="";
- try{
-   const d=new Date(invoiceDate+"T12:00:00");
-   d.setDate(d.getDate()+(+p.invoice.dueDays||14));
-   dueDate=d.toISOString().slice(0,10);
- }catch(e){}
- const net=t.subtotal, vat=t.vat, grand=t.total;
- return `<div class="ros-invoice-preview">
-  <div class="ros-inv-top">
-    <div class="ros-inv-left">
-      <div class="ros-inv-customer">
-        <div><b>${esc(p.customer.name||"")}</b></div>
-        <div>${esc(p.customer.address||"")}</div>
-        ${p.customer.email?`<div>${esc(p.customer.email)}</div>`:""}
-      </div>
-      <div class="ros-inv-title-row">
-        <h1>Factuur ${esc(invoiceNumber)}</h1>
-      </div>
+ if(!p.invoice.dueDays||+p.invoice.dueDays===14)p.invoice.dueDays=3;
+ const t=projectTotals(p),net=t.taxableSubtotal,vat=t.vat,grand=t.total;
+ const due=new Date((p.invoice.date||today())+'T12:00:00');due.setDate(due.getDate()+(+p.invoice.dueDays||3));const dueDate=due.toISOString().slice(0,10);
+ const logoSrc=document.querySelector('.pin-logo')?.src||'';
+ const rows=(p.estimate||[]).map(x=>`<tr><td class="d">${esc(x.desc||'')}</td><td class="q">${(+x.qty||0)} ${esc(x.unit||'')}</td><td class="r">${money(+x.rate||0)}</td><td class="a">${money((+x.qty||0)*(+x.rate||0))}</td></tr>`).join('');
+ return `<div class="card no-print" style="margin-bottom:12px"><div class="formgrid"><div class="field"><label>Factuurnummer</label><input id="inv_number" value="${esc(p.invoice.number)}"></div><div class="field"><label>Factuurdatum</label><input id="inv_date" type="date" value="${p.invoice.date}"></div><div class="field"><label>Betalingstermijn (dagen)</label><input id="inv_due" type="number" min="1" value="${+p.invoice.dueDays||3}"></div></div><div class="small" style="margin-top:8px">Standaard betalingstermijn: 3 dagen na factuurdatum.</div></div>
+ <div class="ros-invoice-preview">
+  <section class="ros-invoice-page">
+   <div class="ros-invoice-content">
+    <div class="ros-doc-header">
+      <div class="ros-doc-brand"><div class="ros-doc-brandline">${logoSrc?`<img src="${logoSrc}" alt="Renoweet">`:''}<h2>Renoweet</h2></div><p>Renovatie • Timmerwerk • Technische oplossingen<br>Hiridostraat 2c65, 1101 CW Amsterdam<br>KVK 97746312 • BTW NL005285311B07<br>06 43865003 • renoweet@hotmail.com<br><b>www.renoweet.nl</b></p></div>
+      <div class="ros-doc-title"><h1>FACTUUR</h1><div><strong>Factuurnr.</strong> ${esc(p.invoice.number)}<br><strong>Datum</strong> ${fmtDate(p.invoice.date)}<br><strong>Vervaldatum</strong> ${fmtDate(dueDate)}</div></div>
     </div>
-
-    <div class="ros-inv-middle">
-      <div class="ros-inv-dates">
-        <div>Factuurdatum&nbsp;&nbsp; ${fmtDate(invoiceDate)}</div>
-        <div>Vervaldatum&nbsp; ${fmtDate(dueDate)}</div>
-      </div>
+    <div class="ros-doc-rule"></div>
+    <div class="ros-doc-party">
+      <div><div class="ros-doc-kicker">AAN</div><strong>${esc(p.customer.name||'')}</strong><br>${esc(p.customer.address||'')}</div>
+      <div><div class="ros-doc-kicker">PROJECT</div><strong>${esc(p.title||'')}</strong><br>Project ID: ${esc(p.id||'')}</div>
     </div>
-
-    <div class="ros-inv-business">
-      <div class="ros-inv-brandline"><img src="data:image/png;base64,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"><strong>Renoweet</strong></div>
-      <div class="ros-inv-tag">Slim en Duurzaam. Voor elke klus</div>
-      <div>Hiridostraat 2c65</div>
-      <div>1101 CW Amsterdam</div>
-      <div style="height:4mm"></div>
-      <div><span class="ros-inv-link">renoweet@hotmail.com</span></div>
-      <div>+31 6 43865003</div>
-      <div class="ros-inv-reg">
-        <div>KVK:&nbsp;&nbsp; 97746312</div>
-        <div>BTW:&nbsp; NL005285311B07</div>
-        <div>Bank:&nbsp; NL45INGB0111929547</div>
-      </div>
+    <div class="ros-doc-section-title">Factuuroverzicht</div>
+    <table class="ros-doc-table"><colgroup><col><col><col><col></colgroup><thead><tr><th class="d">Omschrijving</th><th class="q">Aantal</th><th class="r">Tarief</th><th class="a">Bedrag</th></tr></thead><tbody>${rows}${t.travel?`<tr><td class="d">Reiskosten</td><td class="q">1</td><td class="r">${money(t.travel)}</td><td class="a">${money(t.travel)}</td></tr>`:''}</tbody></table>
+    <div class="ros-doc-summary">
+      <div class="ros-doc-summary-row"><span class="label">Subtotaal excl. btw</span><strong>${money(net)}</strong></div>
+      <div class="ros-doc-summary-row"><span class="label">BTW (${+p.quote.vat||21}%)</span><strong>${money(vat)}</strong></div>
+      ${t.parking?`<div class="ros-doc-summary-row"><span class="label">Parkeerkosten</span><strong>${money(t.parking)}</strong></div>`:''}
+      <div class="ros-doc-summary-row grand"><span class="label">Totaal</span><strong>${money(grand)}</strong></div>
     </div>
-  </div>
-
-  <table class="ros-inv-table">
-    <thead><tr><th class="desc">Omschrijving</th><th class="amt">Bedrag</th><th class="qty">St.</th><th class="tot">Totaal</th></tr></thead>
-    <tbody>
-      ${(p.estimate||[]).map(x=>`<tr>
-        <td class="desc">${esc(x.desc||"")}</td>
-        <td class="amt">€ ${(+x.rate||0).toFixed(2)}</td>
-        <td class="qty">${(+x.qty||0)}</td>
-        <td class="tot">€ ${((+x.qty||0)*(+x.rate||0)).toFixed(2)}</td>
-      </tr>`).join("")}
-      <tr><td style="height:6mm"></td><td></td><td></td><td></td></tr>
-    </tbody>
-  </table>
-
-  <div class="ros-inv-summary">
-    <div class="ros-inv-sumrow"><b>Subtotaal</b><span class="mid">€</span><span class="val">${net.toFixed(2)}</span></div>
-    <div class="ros-inv-sumrow"><b>BTW</b><span class="mid">${(+p.quote.vat||21)}%&nbsp;&nbsp; €</span><span class="val">${vat.toFixed(2)}</span></div>
-  </div>
-
-  <div class="ros-inv-grand"><span class="label">Totaal</span><span class="currency">€</span><span class="value">${grand.toFixed(2)}</span></div>
-
-  <div class="ros-inv-terms">
-    <p>Op alle werkzaamheden en leveringen van Renoweet zijn de Algemene Voorwaarden Renoweet van toepassing.</p>
-    <p>Betaling binnen <b>${+p.invoice.dueDays||14} dagen</b> na factuurdatum.</p>
-    <p>Bij niet-tijdige betaling is Renoweet gerechtigd wettelijke rente en incassokosten in rekening te brengen.</p>
-    <p>De algemene voorwaarden zijn op verzoek kosteloos verkrijgbaar en worden geacht aan de opdrachtgever ter beschikking te zijn gesteld.</p>
-  </div>
-  <div class="ros-inv-accept">“De opdrachtgever verklaart de toepasselijke algemene voorwaarden te hebben ontvangen en daarmee akkoord te gaan.”</div>
+    <div class="ros-invoice-terms"><p><b>Betaling</b></p><p>Betaling binnen <b>${+p.invoice.dueDays||3} dagen</b> na factuurdatum op <b>NL45INGB0111929547</b> onder vermelding van factuurnummer ${esc(p.invoice.number)}.</p><p>Bij niet-tijdige betaling is Renoweet gerechtigd wettelijke rente en incassokosten in rekening te brengen.</p><p>Op alle werkzaamheden en leveringen van Renoweet zijn de Algemene Voorwaarden van Renoweet van toepassing. Zie ook <b>www.renoweet.nl</b>.</p></div>
+   </div>
+   <div class="ros-invoice-footer"><span>Renoweet • Slim en Duurzaam. Voor elke klus.</span><span>Factuur ${esc(p.invoice.number)}</span></div>
+  </section>
  </div>
- <div class="actions no-print" style="margin-top:12px">
-   <button class="btn primary" onclick="markInvoiceSent()">Mark sent</button>
-   <button class="btn" onclick="window.print()">Print / PDF</button>
-   <button class="btn primary" onclick="smartSendInvoice()">Send invoice</button>
-   <button class="btn" onclick="sendToBookkeeping()">Send to bookkeeping</button>
- </div>`;
+ <div class="actions no-print" style="margin-top:12px"><button class="btn primary" onclick="markInvoiceSent()">Mark sent</button><button class="btn" onclick="printInvoiceClean()">Print / PDF</button><button class="btn primary" onclick="smartSendInvoice()">Send invoice</button><button class="btn" onclick="sendToBookkeeping()">Send to bookkeeping</button></div>`;
+}
+
+async function printInvoiceClean(){
+ try{const p=getP();if(!p)return;saveProjectFromForm(false);renderTabs();await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const file=await makeRenoweetInvoicePdfFile();downloadInvoiceFile(file);toast('Invoice PDF downloaded. Open the PDF to print.');}catch(e){console.error(e);alert('Could not create the invoice PDF: '+(e?.message||e));}
 }
 
 async function makeRenoweetInvoicePdfFile(){
- const invoice=document.querySelector(".ros-invoice-preview");
- if(!invoice)throw new Error("Invoice preview not found.");
-
- const previous={
-   transform:invoice.style.transform,
-   margin:invoice.style.margin,
-   boxShadow:invoice.style.boxShadow
- };
- invoice.style.transform="none";
- invoice.style.margin="0";
- invoice.style.boxShadow="none";
-
- try{
-   const canvas=await html2canvas(invoice,{
-     scale:2,
-     backgroundColor:"#ffffff",
-     useCORS:true,
-     allowTaint:false,
-     logging:false
-   });
-
-   const {jsPDF}=window.jspdf;
-   const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
-   const pageW=210,pageH=297;
-   const imgH=canvas.height*pageW/canvas.width;
-   const img=canvas.toDataURL("image/jpeg",0.96);
-
-   if(imgH<=pageH){
-     pdf.addImage(img,"JPEG",0,0,pageW,imgH);
-   }else{
-     // Keep the invoice readable if it ever becomes taller than one A4 page.
-     let remaining=imgH, y=0;
-     pdf.addImage(img,"JPEG",0,y,pageW,imgH);
-     remaining-=pageH;
-     while(remaining>0){
-       pdf.addPage();
-       y-=pageH;
-       pdf.addImage(img,"JPEG",0,y,pageW,imgH);
-       remaining-=pageH;
-     }
-   }
-
-   const p=getP();
-   const nr=(p?.invoice?.number||"factuur").trim();
-   return new File([pdf.output("blob")],`Factuur-${nr}.pdf`,{type:"application/pdf"});
- }finally{
-   invoice.style.transform=previous.transform;
-   invoice.style.margin=previous.margin;
-   invoice.style.boxShadow=previous.boxShadow;
- }
+ const p=getP();if(!p)throw new Error('Project not found.');
+ return renoweetDocumentPdf('.ros-invoice-preview','.ros-invoice-page',`Factuur-${(p.invoice?.number||'factuur').trim()}.pdf`);
 }
 
 function invoiceShareMessage(p){
@@ -1415,7 +1468,7 @@ function readEstimate(p){let rs=document.querySelectorAll('#estRows tr');if(rs.l
 function readMaterials(p){let rs=document.querySelectorAll('#matRows tr');if(rs.length)p.materials=[...rs].map((r,i)=>({id:p.materials[i]?.id||lineid(),desc:r.querySelector('.m_desc').value,qty:r.querySelector('.m_qty').value,supplier:r.querySelector('.m_supplier').value,cost:+r.querySelector('.m_cost').value||0}))}
 function normalizePhoneForStorage(raw){let t=String(raw||'').trim();if(!t)return '';let d=t.replace(/\D/g,'');if(d.startsWith('0031'))d='31'+d.slice(4);if(d.startsWith('316')&&d.length===11)return `+31 6 ${d.slice(3,7)} ${d.slice(7)}`;if(d.startsWith('06')&&d.length===10)return `06 ${d.slice(2,6)} ${d.slice(6)}`;return t.replace(/\s+/g,' ')}
 function findExistingCustomerFor(p){const phone=normalizeWhatsAppNumber(p.customer?.phone),email=String(p.customer?.email||'').trim().toLowerCase();return (db.projects||[]).find(x=>x.id!==p.id&&((phone&&normalizeWhatsAppNumber(x.customer?.phone)===phone)||(email&&String(x.customer?.email||'').trim().toLowerCase()===email)))}
-function saveProjectFromForm(show=true){let p=getP();if(!p)return;if($('f_title')){p.title=$('f_title').value;p.stage=$('f_stage').value;p.customer.name=$('f_name').value;p.customer.phone=normalizePhoneForStorage($('f_phone').value);p.customer.email=$('f_email').value;p.customer.address=$('f_address').value;p.description=$('f_description').value;p.notes=$('f_notes').value}if($('f_scope'))p.scope=$('f_scope').value;readEstimate(p);readMaterials(p);if($('s_start'))p.schedule={...p.schedule,start:$('s_start').value,end:$('s_end').value||$('s_start').value,time:$('s_time').value,endTime:$('s_endtime')?$('s_endtime').value:(p.schedule.endTime||''),notes:$('s_notes').value,shareClient:!!$('s_share_client')?.checked,inviteEmail:($('s_invite_email')?.value||'').trim()};if($('q_number')){p.quote.number=$('q_number').value;p.quote.date=$('q_date').value;p.quote.validDays=+$('q_valid').value||14;p.quote.parking=+$('q_parking').value||0;p.quote.travel=+$('q_travel').value||0;p.quote.exclusions=$('q_exclusions').value;p.quote.paymentTerms=$('q_payment_terms').value;p.quote.assumptions=$('q_assumptions').value}if($('i_number')){p.invoice.number=$('i_number').value;p.invoice.date=$('i_date').value;p.invoice.dueDays=+$('i_due').value||14}document.querySelectorAll('.c_done').forEach(c=>{if(p.checklist[c.dataset.i])p.checklist[c.dataset.i].done=c.checked});p.updated=nowStamp();formDirty=false;scheduleSave();if(show)toast()}
+function saveProjectFromForm(show=true){let p=getP();if(!p)return;if($('f_title')){p.title=$('f_title').value;p.stage=$('f_stage').value;p.customer.name=$('f_name').value;p.customer.phone=normalizePhoneForStorage($('f_phone').value);p.customer.email=$('f_email').value;p.customer.address=$('f_address').value;p.description=$('f_description').value;p.notes=$('f_notes').value}if($('f_scope'))p.scope=$('f_scope').value;readEstimate(p);readMaterials(p);if($('s_start'))p.schedule={...p.schedule,start:$('s_start').value,end:$('s_end').value||$('s_start').value,time:$('s_time').value,endTime:$('s_endtime')?$('s_endtime').value:(p.schedule.endTime||''),notes:$('s_notes').value,shareClient:!!$('s_share_client')?.checked,inviteEmail:($('s_invite_email')?.value||'').trim()};if($('q_number')){p.quote.number=$('q_number').value;p.quote.date=$('q_date').value;p.quote.validDays=+$('q_valid').value||14;p.quote.parking=+$('q_parking').value||0;p.quote.travel=+$('q_travel').value||0;p.quote.exclusions=$('q_exclusions').value;p.quote.paymentTerms=$('q_payment_terms').value;p.quote.advancePct=+$('q_advance_pct')?.value||0;p.quote.installments=+$('q_installments')?.value||0;p.quote.assumptions=$('q_assumptions').value}if($('i_number')){p.invoice.number=$('i_number').value;p.invoice.date=$('i_date').value;p.invoice.dueDays=+$('i_due').value||3}document.querySelectorAll('.c_done').forEach(c=>{if(p.checklist[c.dataset.i])p.checklist[c.dataset.i].done=c.checked});p.updated=nowStamp();formDirty=false;scheduleSave();if(show)toast()}
 async function saveProjectAndClose(){let p=getP();if(!p)return;saveProjectFromForm(false);const isDraft=!!(draftProject&&p.id===draftProject.id);if(isDraft){if(!String(p.customer?.name||'').trim()){alert('Customer name is required before a new project can be saved.');currentTab='intake';renderTabs();return}if(!String(p.customer?.phone||'').trim()){alert('Phone number is required before a new project can be saved.');currentTab='intake';renderTabs();return}const existing=findExistingCustomerFor(p);if(existing){const use=confirm(`This phone/email already belongs to an existing customer:
 
 ${existing.customer.name||'Unnamed customer'}
@@ -1691,7 +1744,7 @@ function sendToBookkeeping(){
  let dueDate="";
  try{
    const d=new Date((p.invoice.date||today())+"T12:00:00");
-   d.setDate(d.getDate()+(+p.invoice.dueDays||14));
+   d.setDate(d.getDate()+(+p.invoice.dueDays||3));
    dueDate=d.toISOString().slice(0,10);
  }catch(e){}
 
